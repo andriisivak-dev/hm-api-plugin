@@ -49,6 +49,14 @@ class Plugin
         });
 
         // Domain Foundation
+        $this->container->singleton(\CSP\Services\UserService::class, function () {
+            return new \CSP\Services\UserService();
+        });
+
+        $this->container->singleton(\CSP\Hooks\UserHooks::class, function ($c) {
+            return new \CSP\Hooks\UserHooks($c->get(\CSP\Services\UserService::class));
+        });
+
         $this->container->singleton(\CSP\PostTypes\CasePostType::class, function () {
             return new \CSP\PostTypes\CasePostType();
         });
@@ -62,6 +70,7 @@ class Plugin
     {
         // Register API
         $this->container->get(Router::class)->register();
+        $this->container->get(\CSP\Hooks\UserHooks::class)->register();
 
         add_action('init', function () {
             $this->container->get(\CSP\PostTypes\CasePostType::class)->register();
