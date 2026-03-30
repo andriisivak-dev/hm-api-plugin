@@ -47,11 +47,33 @@ class Plugin
         $this->container->bind(PermissionMiddleware::class, function () {
             return new PermissionMiddleware();
         });
+
+        // Domain Foundation
+        $this->container->singleton(\CSP\PostTypes\CasePostType::class, function () {
+            return new \CSP\PostTypes\CasePostType();
+        });
+
+        $this->container->singleton(\CSP\Roles\RoleManager::class, function () {
+            return new \CSP\Roles\RoleManager();
+        });
     }
 
     private function boot(): void
     {
         // Register API
         $this->container->get(Router::class)->register();
+
+        add_action('init', function () {
+            $this->container->get(\CSP\PostTypes\CasePostType::class)->register();
+            $this->container->get(\CSP\Roles\RoleManager::class)->register();
+
+            // Register Taxonomies
+            (new \CSP\Taxonomies\ProductTypeTaxonomy())->register();
+            (new \CSP\Taxonomies\IndustrySegmentTaxonomy())->register();
+            (new \CSP\Taxonomies\MachineTypeTaxonomy())->register();
+            (new \CSP\Taxonomies\MachineMakeTaxonomy())->register();
+            (new \CSP\Taxonomies\ToolBrandTaxonomy())->register();
+            (new \CSP\Taxonomies\SolutionTypeTaxonomy())->register();
+        });
     }
 }
