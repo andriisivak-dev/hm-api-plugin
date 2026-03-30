@@ -52,9 +52,24 @@ class Router
             ->pipe(new AuthMiddleware())
             ->pipe(new PermissionMiddleware());
 
-        return $pipeline->process($request, function ($request) use ($controller, $method) {
-            $instance = $this->container->get($controller);
-            return $instance->$method($request);
-        });
+        try {
+            return $pipeline->process($request, function ($request) use ($controller, $method) {
+                $instance = $this->container->get($controller);
+                return $instance->$method($request);
+            });
+        } catch (\CSP\Exceptions\ApiException $e) {
+            return \CSP\API\Responses\ApiResponse::error(
+                $e->getErrorCode(),
+                $e->getMessage(),
+                $e->getHttpStatus(),
+                $e->getData()
+            );
+        } catch (\Throwable $e) {
+            return \CSP\API\Responses\ApiResponse::error(
+                \CSP\API\Responses\ErrorCodes::INTERNAL_ERROR,
+                'Server error: ' . $e->getMessage(),
+                500
+            );
+        }
     }
 }
