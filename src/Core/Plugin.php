@@ -97,6 +97,55 @@ class Plugin
                 $c->get(\CSP\Services\NotificationService::class)
             );
         });
+
+        $this->container->singleton(\CSP\Repositories\CaseRepository::class, function () {
+            return new \CSP\Repositories\CaseRepository();
+        });
+
+        $this->container->singleton(\CSP\Repositories\UserRepository::class, function () {
+            return new \CSP\Repositories\UserRepository();
+        });
+
+        $this->container->singleton(\CSP\Repositories\NotificationRepository::class, function () {
+            return new \CSP\Repositories\NotificationRepository();
+        });
+
+        // -------------------------
+        // REGISTER CONTROLLERS
+        // -------------------------
+        $this->container->singleton(\CSP\API\Controllers\FormController::class, function ($c) {
+            return new \CSP\API\Controllers\FormController(
+                $c->get(\CSP\Services\GravityFormsService::class)
+            );
+        });
+
+        $this->container->singleton(\CSP\API\Controllers\CaseController::class, function ($c) {
+            return new \CSP\API\Controllers\CaseController(
+                $c->get(\CSP\Services\CaseService::class),
+                $c->get(\CSP\Services\CaseFormDataService::class),
+                $c->get(\CSP\Services\CaseStatusService::class),
+                $c->get(\CSP\Services\CasePermissionService::class),
+                $c->get(\CSP\Repositories\CaseRepository::class)
+            );
+        });
+
+        $this->container->singleton(\CSP\API\Controllers\DashboardController::class, function ($c) {
+            return new \CSP\API\Controllers\DashboardController(
+                $c->get(\CSP\Repositories\CaseRepository::class)
+            );
+        });
+
+        $this->container->singleton(\CSP\API\Controllers\UserController::class, function ($c) {
+            return new \CSP\API\Controllers\UserController(
+                $c->get(\CSP\Repositories\UserRepository::class)
+            );
+        });
+
+        $this->container->singleton(\CSP\API\Controllers\NotificationController::class, function ($c) {
+            return new \CSP\API\Controllers\NotificationController(
+                $c->get(\CSP\Repositories\NotificationRepository::class)
+            );
+        });
     }
 
     private function boot(): void
