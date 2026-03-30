@@ -57,12 +57,45 @@ class Plugin
             return new \CSP\Hooks\UserHooks($c->get(\CSP\Services\UserService::class));
         });
 
+        $this->container->singleton(\CSP\Services\CaseService::class, function () {
+            return new \CSP\Services\CaseService();
+        });
+
+        $this->container->singleton(\CSP\Services\GravityFormsService::class, function () {
+            return new \CSP\Services\GravityFormsService();
+        });
+
+        $this->container->singleton(\CSP\Services\CaseFormDataService::class, function ($c) {
+            return new \CSP\Services\CaseFormDataService($c->get(\CSP\Services\CaseService::class));
+        });
+
         $this->container->singleton(\CSP\PostTypes\CasePostType::class, function () {
             return new \CSP\PostTypes\CasePostType();
         });
 
         $this->container->singleton(\CSP\Roles\RoleManager::class, function () {
             return new \CSP\Roles\RoleManager();
+        });
+
+        $this->container->singleton(\CSP\Services\TaxonomyService::class, function () {
+            return new \CSP\Services\TaxonomyService();
+        });
+
+        $this->container->singleton(\CSP\Services\CasePermissionService::class, function ($c) {
+            return new \CSP\Services\CasePermissionService($c->get(\CSP\Services\CaseService::class));
+        });
+
+        $this->container->singleton(\CSP\Services\NotificationService::class, function () {
+            return new \CSP\Services\NotificationService();
+        });
+
+        $this->container->singleton(\CSP\Services\CaseStatusService::class, function ($c) {
+            return new \CSP\Services\CaseStatusService(
+                $c->get(\CSP\Services\CaseService::class),
+                $c->get(\CSP\Services\CasePermissionService::class),
+                $c->get(\CSP\Services\TaxonomyService::class),
+                $c->get(\CSP\Services\NotificationService::class)
+            );
         });
     }
 
