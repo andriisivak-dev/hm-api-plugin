@@ -1,0 +1,12 @@
+{
+  "name": "hm/case-study-api",
+  "description": "Case Study Platform Backend",
+  "version": "1.0.0",
+  "type": "wordpress-plugin",
+  "autoload": {
+    "psr-4": {
+      "CSP\\": "src/"
+    }
+  },
+  "require": {}
+}
