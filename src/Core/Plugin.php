@@ -110,6 +110,10 @@ class Plugin
             return new \CSP\Repositories\NotificationRepository();
         });
 
+        $this->container->singleton(\CSP\DTO\DTOMapper::class, function () {
+            return new \CSP\DTO\DTOMapper();
+        });
+
         // -------------------------
         // REGISTER CONTROLLERS
         // -------------------------
@@ -125,7 +129,8 @@ class Plugin
                 $c->get(\CSP\Services\CaseFormDataService::class),
                 $c->get(\CSP\Services\CaseStatusService::class),
                 $c->get(\CSP\Services\CasePermissionService::class),
-                $c->get(\CSP\Repositories\CaseRepository::class)
+                $c->get(\CSP\Repositories\CaseRepository::class),
+                $c->get(\CSP\DTO\DTOMapper::class)
             );
         });
 
@@ -137,13 +142,15 @@ class Plugin
 
         $this->container->singleton(\CSP\API\Controllers\UserController::class, function ($c) {
             return new \CSP\API\Controllers\UserController(
-                $c->get(\CSP\Repositories\UserRepository::class)
+                $c->get(\CSP\Repositories\UserRepository::class),
+                $c->get(\CSP\DTO\DTOMapper::class)
             );
         });
 
         $this->container->singleton(\CSP\API\Controllers\NotificationController::class, function ($c) {
             return new \CSP\API\Controllers\NotificationController(
-                $c->get(\CSP\Repositories\NotificationRepository::class)
+                $c->get(\CSP\Repositories\NotificationRepository::class),
+                $c->get(\CSP\DTO\DTOMapper::class)
             );
         });
     }

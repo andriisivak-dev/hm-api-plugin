@@ -16,6 +16,7 @@ use CSP\API\Controllers\NotificationController;
 use CSP\API\Middleware\MiddlewarePipeline;
 use CSP\API\Middleware\AuthMiddleware;
 use CSP\API\Middleware\PermissionMiddleware;
+use CSP\API\Middleware\SanitizeMiddleware;
 use WP_REST_Request;
 
 class Router
@@ -91,6 +92,9 @@ class Router
         $pipeline = new MiddlewarePipeline();
         
         // Middleware registration could be injected via container, but we'll instantiate for simplicity based on stub
+        if (class_exists(SanitizeMiddleware::class)) {
+            $pipeline->pipe(new SanitizeMiddleware());
+        }
         if (class_exists(AuthMiddleware::class)) {
             $pipeline->pipe(new AuthMiddleware());
         }

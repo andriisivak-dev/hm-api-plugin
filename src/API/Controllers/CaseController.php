@@ -12,6 +12,7 @@ use CSP\Services\CaseFormDataService;
 use CSP\Services\CaseStatusService;
 use CSP\Services\CasePermissionService;
 use CSP\Repositories\CaseRepository;
+use CSP\DTO\DTOMapper;
 
 class CaseController
 {
@@ -20,19 +21,22 @@ class CaseController
     private CaseStatusService $statusService;
     private CasePermissionService $permissionService;
     private CaseRepository $caseRepo;
+    private DTOMapper $dtoMapper;
 
     public function __construct(
         CaseService $caseService,
         CaseFormDataService $formDataService,
         CaseStatusService $statusService,
         CasePermissionService $permissionService,
-        CaseRepository $caseRepo
+        CaseRepository $caseRepo,
+        DTOMapper $dtoMapper
     ) {
         $this->caseService = $caseService;
         $this->formDataService = $formDataService;
         $this->statusService = $statusService;
         $this->permissionService = $permissionService;
         $this->caseRepo = $caseRepo;
+        $this->dtoMapper = $dtoMapper;
     }
 
     public function index(WP_REST_Request $request)
@@ -68,10 +72,13 @@ class CaseController
         // Ideally we use a DTO here (Phase 7). For now, simple hydration via getCase.
         $cases = [];
         foreach ($result['cases'] as $case_id) {
-            $cases[] = $this->caseService->getCase((int)$case_id);
+            $raw_case = $this->caseService->getCase((int)$case_id);
+            if ($raw_case) {
+                $cases[] = $this->dtoMapper->toCaseListItem((int)$case_id, $raw_case);
+            }
         }
 
-        return ApiResponse::success($cases, null, [
+        return ApiResponse::success($cases, '', [
             'total'       => $result['total'],
             'total_pages' => $result['total_pages'],
             'page'        => $result['page'],
@@ -120,10 +127,10 @@ class CaseController
             return ApiResponse::error(ErrorCodes::NOT_FOUND, __('Case not found', 'csp'), 404);
         }
 
-        // Attach permissions
-        $case['permissions'] = $this->permissionService->getPermissions($case_id, $current_user_id);
+        $permissions = $this->permissionService->getPermissions($case_id, $current_user_id);
+        $dto = $this->dtoMapper->toCaseDetail($case_id, $case, $permissions);
 
-        return ApiResponse::success($case);
+        return ApiResponse::success($dto);
     }
 
     public function getFormData(WP_REST_Request $request)

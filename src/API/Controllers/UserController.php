@@ -8,14 +8,17 @@ use WP_REST_Request;
 use CSP\API\Responses\ApiResponse;
 use CSP\API\Responses\ErrorCodes;
 use CSP\Repositories\UserRepository;
+use CSP\DTO\DTOMapper;
 
 class UserController
 {
     private UserRepository $userRepo;
+    private DTOMapper $dtoMapper;
 
-    public function __construct(UserRepository $userRepo)
+    public function __construct(UserRepository $userRepo, DTOMapper $dtoMapper)
     {
         $this->userRepo = $userRepo;
+        $this->dtoMapper = $dtoMapper;
     }
 
     public function index(WP_REST_Request $request)
@@ -44,18 +47,7 @@ class UserController
 
         $users = [];
         foreach ($result['users'] as $user_id) {
-            $user_info = get_userdata((int)$user_id);
-            if ($user_info) {
-                $status = get_user_meta((int)$user_id, '_user_status', true) ?: 'active';
-                $users[] = [
-                    'id'         => $user_info->ID,
-                    'full_name'  => $user_info->display_name,
-                    'email'      => $user_info->user_email,
-                    'role'       => !empty($user_info->roles) ? $user_info->roles[0] : '',
-                    'status'     => $status,
-                    'created_at' => $user_info->user_registered,
-                ];
-            }
+            $users[] = $this->dtoMapper->toUser((int)$user_id);
         }
 
         return ApiResponse::success($users, null, [

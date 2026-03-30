@@ -11,11 +11,15 @@ class PermissionMiddleware
 {
     public function __invoke(WP_REST_Request $request, callable $next)
     {
-        // temporarily skip everything
-        // later here will be:
-        // - role checks
-        // - ownership checks
-        // - status checks
+        // Global minimum capability requirement for all our custom API endpoints
+        // Fine-grained ownership and role checks are pushed to the Controllers via CasePermissionService
+        if (!current_user_can('read')) {
+            return \CSP\API\Responses\ApiResponse::error(
+                \CSP\API\Responses\ErrorCodes::FORBIDDEN,
+                __('You do not have the required permissions.', 'csp'),
+                403
+            );
+        }
 
         return $next($request);
     }

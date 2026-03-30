@@ -8,14 +8,17 @@ use WP_REST_Request;
 use CSP\API\Responses\ApiResponse;
 use CSP\API\Responses\ErrorCodes;
 use CSP\Repositories\NotificationRepository;
+use CSP\DTO\DTOMapper;
 
 class NotificationController
 {
     private NotificationRepository $notifRepo;
+    private DTOMapper $dtoMapper;
 
-    public function __construct(NotificationRepository $notifRepo)
+    public function __construct(NotificationRepository $notifRepo, DTOMapper $dtoMapper)
     {
         $this->notifRepo = $notifRepo;
+        $this->dtoMapper = $dtoMapper;
     }
 
     public function index(WP_REST_Request $request)
@@ -25,17 +28,9 @@ class NotificationController
 
         $result = $this->notifRepo->getNotifications($current_user_id, $args);
 
-        // Simple mapping, DTOs would be better
         $notifications = [];
         foreach ($result['notifications'] as $notif) {
-            $notifications[] = [
-                'id'         => (int) $notif['id'],
-                'type'       => $notif['type'],
-                'case_id'    => (int) $notif['case_id'],
-                'message'    => $notif['message'],
-                'is_read'    => (bool) $notif['is_read'],
-                'created_at' => $notif['created_at'],
-            ];
+            $notifications[] = $this->dtoMapper->toNotification($notif);
         }
 
         return ApiResponse::success($notifications, null, [
