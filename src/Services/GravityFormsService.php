@@ -53,9 +53,13 @@ class GravityFormsService
             $clean_field = [
                 'id'                => $field->id,
                 'type'              => $field->type,
+                'inputType'         => $field->inputType ?? '',
                 'label'             => $field->label,
                 'is_required'       => (bool) $field->isRequired,
                 'is_hidden'         => (bool) ($field->visibility === 'hidden'),
+                'visibility'        => $field->visibility ?? 'visible',
+                'size'              => $field->size ?? 'large',
+                'placeholder'       => $field->placeholder ?? '',
                 'css_class'         => $field->cssClass ?? '',
                 'choices'           => $field->choices ?? null,
                 'conditional_logic' => $field->conditionalLogic ?? null,
@@ -63,7 +67,28 @@ class GravityFormsService
                     'is_required' => (bool) $field->isRequired,
                     'max_length'  => $field->maxLength ?? '',
                 ],
+                'numberFormat'      => $field->numberFormat ?? 'decimal_dot',
+                'adminLabel'        => $field->adminLabel ?? '',
+                'description'       => $field->description ?? '',
+                'defaultValue'      => $field->defaultValue ?? '',
             ];
+
+            if (!empty($field->enableCalculation) && !empty($field->calculationFormula)) {
+                $formula = $field->calculationFormula;
+                preg_match_all('/(?:\{[^:}]*:|\{)(\d+(?:\.\d+)?)\}/', $formula, $matches);
+                $referencedFields = !empty($matches[1]) ? array_values(array_unique($matches[1])) : [];
+
+                $clean_field['enableCalculation'] = true;
+                $clean_field['calculationFormula'] = $formula;
+                $clean_field['calculation'] = [
+                    'formula'           => $formula,
+                    'rounding'          => $field->calculationRounding ?? '',
+                    'enableCalculation' => true,
+                    'referencedFields'  => $referencedFields,
+                ];
+            } elseif ($field->type === 'number') {
+                 $clean_field['enableCalculation'] = false;
+            }
 
             if ($field->type === 'checkbox' || $field->type === 'radio' || $field->type === 'select') {
                $clean_field['choices'] = array_map(function($choice) {
