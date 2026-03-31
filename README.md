@@ -377,6 +377,11 @@ This is the **single extension point** for all field-to-backend mappings. Every 
 | 99 | Customer ID | meta: `_case_customer_id` | — | — | — | always |
 | 2 | City | meta: `_case_city` | — | ✅ | — | submit |
 | 4 | State | meta: `_case_state` | — | ✅ | — | submit |
+| 138 | Insert Specification | meta: `_case_insert_specification` | — | ✅ | — | submit |
+| 137 | Tool Specification | meta: `_case_tool_specification` | — | ✅ | — | submit |
+| 201 | Total Cost Savings | meta: `_case_total_cost_savings` | — | ✅ | — | submit |
+| 66 | Down Time Savings | meta: `_case_down_time_savings` | — | ✅ | — | submit |
+| 67 | Cycle Time Savings | meta: `_case_cycle_time_savings` | — | ✅ | — | submit |
 
 ### `sync_on: 'always'` behaviour
 
