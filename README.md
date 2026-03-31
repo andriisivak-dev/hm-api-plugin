@@ -369,6 +369,10 @@ This is the **single extension point** for all field-to-backend mappings. Every 
 |---|---|---|---|---|---|---|
 | 7 | Product Type | taxonomy: `hm_product_type` | ✅ | ✅ | ✅ | submit |
 | 8 | Industry Segment | taxonomy: `hm_industry_segment` | ✅ | ✅ | ✅ | submit |
+| 126 | Machine Type | taxonomy: `hm_machine_type` | ✅ | ✅ | ✅ | submit |
+| 227 | Machine Make | taxonomy: `hm_machine_make` | ✅ | ✅ | ✅ | submit |
+| 229 | Tool Brand | taxonomy: `hm_tool_brand` | ✅ | ✅ | ✅ | submit |
+| 20 | Solution Type | taxonomy: `hm_solution_type` | ✅ | ✅ | ✅ | submit |
 | 100 | Customer Name | meta: `_case_customer_name` | — | ✅ | — | **always** |
 | 99 | Customer ID | meta: `_case_customer_id` | — | — | — | always |
 | 2 | City | meta: `_case_city` | — | ✅ | — | submit |
@@ -665,6 +669,10 @@ Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; 
 {
   "product_types": [{ "term_id": 3, "name": "Cutting Tools", "slug": "cutting-tools", "count": 12 }],
   "industry_segments": [{ "term_id": 7, "name": "Medical", "slug": "medical", "count": 4 }],
+  "machine_types": [],
+  "machine_makes": [],
+  "tool_brands": [],
+  "solution_types": [],
   "submitted_by": []
 }
 ```

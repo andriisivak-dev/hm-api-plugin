@@ -71,34 +71,37 @@ class DashboardController
 
     public function getFilters(WP_REST_Request $request)
     {
-        // Mock filters based on taxonomies
+        // Dynamic filters based on FormFieldMap
         $filters = [
-            'product_types' => [],
+            'product_types'     => [],
             'industry_segments' => [],
-            'submitted_by' => []
+            'machine_types'     => [],
+            'machine_makes'     => [],
+            'tool_brands'       => [],
+            'solution_types'    => [],
+            'submitted_by'      => []
         ];
 
-        $pt_terms = get_terms(['taxonomy' => 'product_type', 'hide_empty' => true]);
-        if (!is_wp_error($pt_terms)) {
-            foreach ($pt_terms as $term) {
-                $filters['product_types'][] = [
-                    'term_id' => $term->term_id,
-                    'name'    => $term->name,
-                    'slug'    => $term->slug,
-                    'count'   => $term->count
-                ];
-            }
-        }
+        $taxonomies_map = [
+            'hm_product_type'     => 'product_types',
+            'hm_industry_segment' => 'industry_segments',
+            'hm_machine_type'     => 'machine_types',
+            'hm_machine_make'     => 'machine_makes',
+            'hm_tool_brand'       => 'tool_brands',
+            'hm_solution_type'    => 'solution_types',
+        ];
 
-        $is_terms = get_terms(['taxonomy' => 'industry_segment', 'hide_empty' => true]);
-        if (!is_wp_error($is_terms)) {
-            foreach ($is_terms as $term) {
-                $filters['industry_segments'][] = [
-                    'term_id' => $term->term_id,
-                    'name'    => $term->name,
-                    'slug'    => $term->slug,
-                    'count'   => $term->count
-                ];
+        foreach ($taxonomies_map as $tax_slug => $filter_key) {
+            $terms = get_terms(['taxonomy' => $tax_slug, 'hide_empty' => true]);
+            if (!is_wp_error($terms)) {
+                foreach ($terms as $term) {
+                    $filters[$filter_key][] = [
+                        'term_id' => $term->term_id,
+                        'name'    => $term->name,
+                        'slug'    => $term->slug,
+                        'count'   => $term->count
+                    ];
+                }
             }
         }
 
