@@ -31,10 +31,12 @@ class GravityFormsService
             'non_data_field_types' => ['page', 'section', 'html'],
         ];
 
+        $pageNames = $form['pagination']['pages'] ?? [];
+
         $current_stepNum = 1;
         $current_step = [
             'step_number' => $current_stepNum,
-            'label'       => '',
+            'label'       => !empty($pageNames[0]) ? $pageNames[0] : 'Step 1',
             'fields'      => [],
         ];
 
@@ -44,7 +46,7 @@ class GravityFormsService
                 $current_stepNum++;
                 $current_step = [
                     'step_number' => $current_stepNum,
-                    'label'       => '', // Page field itself doesn't always have a strict label, but we can look for it if needed
+                    'label'       => !empty($pageNames[$current_stepNum - 1]) ? $pageNames[$current_stepNum - 1] : (!empty($field->label) ? $field->label : ('Step ' . $current_stepNum)),
                     'fields'      => [],
                 ];
                 continue;
