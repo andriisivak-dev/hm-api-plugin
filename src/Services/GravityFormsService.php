@@ -77,6 +77,7 @@ class GravityFormsService
                 'adminLabel'        => $field->adminLabel ?? '',
                 'description'       => $field->description ?? '',
                 'defaultValue'      => $field->defaultValue ?? '',
+                'content'           => $field->content ?? '',
             ];
 
             if (!empty($field->enableCalculation) && !empty($field->calculationFormula)) {
