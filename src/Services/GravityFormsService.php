@@ -104,7 +104,13 @@ class GravityFormsService
                    ];
                }, $field->choices ?? []);
             }
-            
+            if ($field->type === 'fileupload') {
+                $clean_field['multipleFiles'] = (bool) $field->multipleFiles;
+                $clean_field['maxFiles'] = $field->maxFiles ?? 0;
+                $clean_field['maxFileSize'] = $field->maxFileSize ?? 0;
+                $clean_field['allowedExtensions'] = $field->allowedExtensions ?? '';
+            }
+
             // Expose inputs natively (e.g. 17.1, 17.2 for checkboxes)
             if (is_array($field->inputs) && !empty($field->inputs)) {
                 $clean_field['inputs'] = array_map(function($input) {
