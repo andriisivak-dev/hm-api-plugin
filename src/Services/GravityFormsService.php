@@ -29,6 +29,7 @@ class GravityFormsService
             'total_steps'          => 1,
             'steps'                => [],
             'non_data_field_types' => ['page', 'section', 'html'],
+            'grid_columns'         => 12,
         ];
 
         $pageNames = $form['pagination']['pages'] ?? [];
@@ -78,6 +79,7 @@ class GravityFormsService
                 'description'       => $field->description ?? '',
                 'defaultValue'      => $field->defaultValue ?? '',
                 'content'           => $field->content ?? '',
+                'layout'            => $this->extractLayoutData($field),
             ];
 
             if (!empty($field->enableCalculation) && !empty($field->calculationFormula)) {
@@ -129,5 +131,47 @@ class GravityFormsService
         $schema['total_steps'] = count($schema['steps']);
 
         return $schema;
+    }
+
+    /**
+     * Extracts grid layout data from a GF field.
+     *
+     * GF stores layout in a 12-column grid system.
+     * layoutGridColumnSpan      – how many of 12 columns this field occupies.
+     * layoutSpacerGridColumnSpan – empty spacer columns appended after the field.
+     *
+     * Example mappings (span → percentage):
+     *   12 → 100%   6 → 50%   4 → 33%   3 → 25%   2 → 16.67%
+     */
+    private function extractLayoutData(object $field): array
+    {
+        $columnSpan        = isset($field->layoutGridColumnSpan)
+            ? (int) $field->layoutGridColumnSpan
+            : 12; // default: full width
+
+        $spacerColumnSpan  = isset($field->layoutSpacerGridColumnSpan)
+            ? (int) $field->layoutSpacerGridColumnSpan
+            : 0;
+
+        // Derive a human-readable percentage width
+        $widthPercent = $columnSpan > 0
+            ? round(($columnSpan / 12) * 100, 4)
+            : 100;
+
+        // Spacer percentage (empty space after field, before next field)
+        $spacerPercent = $spacerColumnSpan > 0
+            ? round(($spacerColumnSpan / 12) * 100, 4)
+            : 0;
+
+        return [
+            'columnSpan'        => $columnSpan,
+            'spacerColumnSpan'  => $spacerColumnSpan,
+            'widthPercent'      => $widthPercent,
+            'spacerPercent'     => $spacerPercent,
+            'totalColumnsUsed'  => $columnSpan + $spacerColumnSpan,
+            'isFullWidth'       => ($columnSpan === 12),
+            'cssGridSpan'       => 'col-span-' . $columnSpan,
+            'cssWidth'          => $widthPercent . '%',
+        ];
     }
 }
