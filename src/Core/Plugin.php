@@ -143,7 +143,8 @@ class Plugin
         $this->container->singleton(\CSP\API\Controllers\UserController::class, function ($c) {
             return new \CSP\API\Controllers\UserController(
                 $c->get(\CSP\Repositories\UserRepository::class),
-                $c->get(\CSP\DTO\DTOMapper::class)
+                $c->get(\CSP\DTO\DTOMapper::class),
+                $c->get(\CSP\Services\UserService::class)
             );
         });
 

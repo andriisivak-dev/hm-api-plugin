@@ -14,11 +14,13 @@ class UserController
 {
     private UserRepository $userRepo;
     private DTOMapper $dtoMapper;
+    private \CSP\Services\UserService $userService;
 
-    public function __construct(UserRepository $userRepo, DTOMapper $dtoMapper)
+    public function __construct(UserRepository $userRepo, DTOMapper $dtoMapper, \CSP\Services\UserService $userService)
     {
         $this->userRepo = $userRepo;
         $this->dtoMapper = $dtoMapper;
+        $this->userService = $userService;
     }
 
     public function index(WP_REST_Request $request)
@@ -56,5 +58,20 @@ class UserController
             'page'        => $result['page'],
             'per_page'    => $result['per_page'],
         ]);
+    }
+
+    public function updateAvatar(WP_REST_Request $request)
+    {
+        $userId = (int)get_current_user_id();
+        if ($userId <= 0) {
+            return ApiResponse::error(ErrorCodes::UNAUTHORIZED, 'Invalid user.', 401);
+        }
+
+        $files = $request->get_file_params();
+        $file = $files['avatar'] ?? null;
+
+        $result = $this->userService->uploadAvatar($userId, $file);
+
+        return ApiResponse::success($result, 'Avatar updated successfully.');
     }
 }
