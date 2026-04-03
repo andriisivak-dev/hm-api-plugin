@@ -49,6 +49,7 @@ class Router
         $this->addRoute($ns, 'DELETE', '/cases/(?P<id>\d+)', CaseController::class, 'delete');
 
         // 6.3 Case Form Data
+        $this->addRoute($ns, 'GET', '/cases/activities', CaseController::class, 'getActivities');
         $this->addRoute($ns, 'GET', '/cases/(?P<id>\d+)/form-data', CaseController::class, 'getFormData');
         $this->addRoute($ns, 'PATCH', '/cases/(?P<id>\d+)/form-data', CaseController::class, 'updateFormData');
 

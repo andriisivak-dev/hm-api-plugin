@@ -97,7 +97,7 @@ class CaseController
         
         // Default total_steps fallback
         if (!$total_steps) {
-            $total_steps = 1; 
+            $total_steps = 1;
         }
 
         $result = $this->caseService->createDraftCase($form_id, $total_steps);
@@ -261,5 +261,105 @@ class CaseController
         }
 
         return ApiResponse::success($result);
+    }
+
+    public function getActivities(WP_REST_Request $request)
+    {
+        $current_user = wp_get_current_user();
+        if (!$current_user || !$current_user->ID) {
+            return ApiResponse::error(ErrorCodes::UNAUTHORIZED, __('Unauthorized', 'csp'), 401);
+        }
+
+        $roles = (array) $current_user->roles;
+
+        $is_admin = in_array('administrator', $roles, true) || in_array('hm_administrator', $roles, true);
+        $is_marketing = in_array('hm_marketing', $roles, true) || in_array('marketing', $roles, true);
+        $is_manager = in_array('hm_manager', $roles, true) || in_array('manager', $roles, true) || in_array('supervisor', $roles, true);
+
+        // field_agent has no activities, super admin & marketing & managers can see
+        $can_view = $is_admin || $is_marketing || $is_manager;
+        if (!$can_view) {
+            return ApiResponse::error(ErrorCodes::FORBIDDEN, __('Forbidden', 'csp'), 403);
+        }
+
+        $stats = [
+            'pending_review' => 0,
+            'returned' => 0,
+            'approved' => 0,
+            'rejected' => 0,
+            'draft' => 0,
+        ];
+
+        $current_user_id = $current_user->ID;
+        $cache_key = 'csp_case_activities_stats_' . $current_user_id;
+        $cached = wp_cache_get($cache_key, 'csp_cases');
+        if (is_array($cached)) {
+            return ApiResponse::success(wp_parse_args($cached, $stats));
+        }
+
+        $query_args = [
+            'posts_per_page' => -1,
+            'post_status' => ['publish', 'draft', 'in_review', 'returned', 'approved', 'rejected'],
+        ];
+
+        if (!$is_admin && !$is_marketing) {
+            if ($is_manager) {
+                $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
+                $agent_ids = !empty($agent_ids_raw) ? json_decode($agent_ids_raw, true) : [];
+                $agent_ids[] = $current_user_id;
+                $query_args['author__in'] = $agent_ids;
+            } else {
+                $query_args['author__in'] = [$current_user_id];
+            }
+        }
+
+        $result = $this->caseRepo->getCases($query_args);
+
+        foreach ($result['cases'] as $case_id) {
+            $case_id = (int) $case_id;
+
+            $status = sanitize_key((string) get_post_meta($case_id, 'status', true));
+            if ('' === $status) {
+                $status = sanitize_key((string) get_post_meta($case_id, 'workflow_state', true));
+            }
+
+            if ('complete' === $status) {
+                $status = 'approved';
+            }
+
+            if ('' === $status) {
+                $legacy_case_status = sanitize_key((string) get_post_meta($case_id, 'case_status', true));
+                if ('closed' === $legacy_case_status) {
+                    $status = 'rejected';
+                }
+            }
+
+            if ('' === $status) {
+                $post_status = sanitize_key((string) get_post_status($case_id));
+                $status = 'publish' === $post_status ? 'in_review' : $post_status;
+            }
+
+            switch ($status) {
+                case 'draft':
+                    ++$stats['draft'];
+                    break;
+                case 'returned':
+                    ++$stats['returned'];
+                    break;
+                case 'approved':
+                    ++$stats['approved'];
+                    break;
+                case 'rejected':
+                    ++$stats['rejected'];
+                    break;
+                case 'in_review':
+                    ++$stats['pending_review'];
+                    break;
+            }
+        }
+
+        wp_cache_set($cache_key, $stats, 'csp_cases', MINUTE_IN_SECONDS);
+
+        return ApiResponse::success($stats);
     }
 }
