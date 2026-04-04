@@ -661,6 +661,7 @@ The `override` field is not strictly validated server-side — any admin call to
 |---|---|---|---|
 | `GET` | `/dashboard/stats` | `DashboardController::getStats` | Activity panel counters, role-scoped |
 | `GET` | `/dashboard/filters` | `DashboardController::getFilters` | Taxonomy term lists for sidebar filter UI |
+| `GET` | `/cases/activities` | `CaseController::getActivities` | Role-scoped activity counts (pending, returned, approved, rejected, draft). Restricted (403) for `field_agent`. |
 
 **Stats response `data`:**
 ```json
@@ -689,6 +690,7 @@ Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; 
 | Method | Endpoint | Controller | Scope |
 |---|---|---|---|
 | `GET` | `/users` | `UserController::index` | Admin: all users; Manager: own agents only; Field agent: 403 |
+| `POST` | `/profile/avatar` | `UserController::updateAvatar` | All authenticated users. Processes multipart upload (`file`), sets user avatar meta. |
 
 **Query parameters:** `search` (wildcard on login/email/display_name), `role`, `status` (`active` / `inactive` / `all`), `orderby` (`date` / `name`), `order`, `page`, `per_page`
 
