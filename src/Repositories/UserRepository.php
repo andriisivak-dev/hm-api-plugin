@@ -27,7 +27,16 @@ class UserRepository
 
         // 1. Role filter
         if (!empty($args['role'])) {
-            $query_args['role'] = sanitize_text_field($args['role']);
+            $role = sanitize_text_field($args['role']);
+            if ($role === 'hm_manager') {
+                $query_args['role__in'] = ['hm_manager'];
+            } elseif ($role === 'hm_field_agent') {
+                $query_args['role__in'] = ['hm_field_agent'];
+            } elseif ($role === 'hm_marketing') {
+                $query_args['role__in'] = ['hm_marketing'];
+            } else {
+                $query_args['role'] = $role;
+            }
         }
 
         // 2. Status filter

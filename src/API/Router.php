@@ -66,6 +66,9 @@ class Router
 
         // 6.7 Users
         $this->addRoute($ns, 'GET', '/users', UserController::class, 'index');
+        $this->addRoute($ns, 'POST', '/users', UserController::class, 'create');
+        $this->addRoute($ns, 'PATCH', '/users/(?P<id>\d+)', UserController::class, 'update');
+        $this->addRoute($ns, 'DELETE', '/users/(?P<id>\d+)', UserController::class, 'delete');
         $this->addRoute($ns, 'POST', '/profile/avatar', UserController::class, 'updateAvatar');
 
         // 6.8 Notifications

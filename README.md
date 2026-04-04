@@ -698,6 +698,9 @@ Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; 
 | Method | Endpoint | Controller | Scope |
 |---|---|---|---|
 | `GET` | `/users` | `UserController::index` | Admin: all users; Manager: own agents only; Field agent: 403 |
+| `POST` | `/users` | `UserController::create` | Admin only. Creates user and sets role, manager, and status. |
+| `PATCH` | `/users/{id}` | `UserController::update` | Admin only. Updates full_name, email, role, password, manager_id, status. |
+| `DELETE` | `/users/{id}` | `UserController::delete` | Admin only. Soft-deletes user. |
 | `POST` | `/profile/avatar` | `UserController::updateAvatar` | All authenticated users. Processes multipart upload (`file`), sets user avatar meta. |
 
 **Query parameters:** `search` (wildcard on login/email/display_name), `role`, `status` (`active` / `inactive` / `all`), `orderby` (`date` / `name`), `order`, `page`, `per_page`

@@ -12,4 +12,5 @@ class ErrorCodes
     public const BAD_REQUEST = 'CSP_BAD_REQUEST';
     public const VALIDATION_ERROR = 'CSP_VALIDATION_ERROR';
     public const INTERNAL_ERROR = 'CSP_INTERNAL_ERROR';
+    public const CONFLICT = 'CSP_CONFLICT';
 }
