@@ -66,6 +66,20 @@ class DashboardController
             }
         }
 
+        if ($is_admin) {
+            $user_counts = count_users();
+            $supervisors = $user_counts['avail_roles']['hm_manager'] ?? 0;
+            $agents      = $user_counts['avail_roles']['hm_field_agent'] ?? 0;
+            $marketing   = $user_counts['avail_roles']['hm_marketing'] ?? 0;
+            
+            $stats['users'] = [
+                'total'       => $supervisors + $agents + $marketing,
+                'supervisors' => $supervisors,
+                'agents'      => $agents,
+                'marketing'   => $marketing,
+            ];
+        }
+
         return ApiResponse::success($stats);
     }
 

@@ -665,7 +665,15 @@ The `override` field is not strictly validated server-side — any admin call to
 
 **Stats response `data`:**
 ```json
-{ "pending_review": 5, "returned": 2, "approved": 18, "rejected": 3, "draft": 7, "total": 35 }
+{ 
+  "pending_review": 5, 
+  "returned": 2, 
+  "approved": 18, 
+  "rejected": 3, 
+  "draft": 7, 
+  "total": 35,
+  "users": { "total": 12, "supervisors": 2, "agents": 8, "marketing": 2 }
+}
 ```
 
 Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; manager = own + agents; field_agent = own only).
