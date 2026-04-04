@@ -65,6 +65,7 @@ class RoleManager
             $manager->add_cap('publish_hm_cases');
             $manager->add_cap('read_private_hm_cases');
             $manager->add_cap('create_hm_cases');
+            $manager->add_cap('upload_files');
             // Managers might not delete but let's give basic ones, actual permissions handled by API middleware
         }
 
@@ -76,6 +77,7 @@ class RoleManager
             $field_agent->add_cap('delete_hm_case');
             $field_agent->add_cap('edit_hm_cases');
             $field_agent->add_cap('create_hm_cases');
+            $field_agent->add_cap('upload_files');
             // No edit_others_hm_cases
         }
 
