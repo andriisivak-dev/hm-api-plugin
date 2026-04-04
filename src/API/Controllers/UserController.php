@@ -30,8 +30,8 @@ class UserController
 
         // Enforce permissions for users endpoint (admin only typically, or manager for own agents)
         $current_user = get_userdata(get_current_user_id());
-        $is_admin = in_array('administrator', (array)$current_user->roles) || in_array('hm_administrator', (array)$current_user->roles);
-        $is_manager = in_array('hm_manager', (array)$current_user->roles);
+        $is_admin     = in_array('administrator', (array) $current_user->roles);
+        $is_manager   = in_array('hm_manager', (array) $current_user->roles);
 
         if (!$is_admin) {
             if ($is_manager) {
@@ -84,7 +84,7 @@ class UserController
             return ApiResponse::error(ErrorCodes::CONFLICT, 'Email address is already in use.', 409);
         }
 
-        $allowed_roles = ['hm_manager', 'hm_field_agent', 'hm_marketing', 'manager', 'field_agent', 'marketing'];
+        $allowed_roles = ['hm_manager', 'hm_field_agent', 'hm_marketing'];
         if (!in_array($role, $allowed_roles, true)) {
             return ApiResponse::error(ErrorCodes::VALIDATION_ERROR, 'Invalid role.', 400);
         }
@@ -113,7 +113,7 @@ class UserController
             return ApiResponse::error(ErrorCodes::INTERNAL_ERROR, $user_id->get_error_message(), 500);
         }
 
-        if ($manager_id > 0 && in_array($role, ['hm_field_agent', 'field_agent'])) {
+        if ($manager_id > 0 && $role === 'hm_field_agent') {
             update_user_meta($user_id, '_assigned_manager_id', $manager_id);
             $this->userService->rebuildManagerAgents($manager_id);
         }
@@ -134,8 +134,8 @@ class UserController
         if (!$user) {
             return ApiResponse::error(ErrorCodes::NOT_FOUND, 'User not found.', 404);
         }
-        
-        if (in_array('administrator', (array)$user->roles) || in_array('hm_administrator', (array)$user->roles)) {
+
+        if (in_array('administrator', $user->roles)) {
             return ApiResponse::error(ErrorCodes::FORBIDDEN, 'Cannot modify a super admin account via this endpoint.', 403);
         }
         
@@ -163,13 +163,13 @@ class UserController
         
         if (isset($params['role'])) {
             $role = sanitize_key($params['role']);
-            $allowed_roles = ['hm_manager', 'hm_field_agent', 'hm_marketing', 'manager', 'field_agent', 'marketing'];
+            $allowed_roles = ['hm_manager', 'hm_field_agent', 'hm_marketing'];
             if (!in_array($role, $allowed_roles, true)) {
                 return ApiResponse::error(ErrorCodes::VALIDATION_ERROR, 'Invalid role.', 400);
             }
             $update_args['role'] = $role;
-            if (!in_array($role, ['hm_field_agent', 'field_agent'])) {
-                $old_manager_id = (int)get_user_meta($user_id, '_assigned_manager_id', true);
+            if (!in_array($role, ['hm_field_agent'])) {
+                $old_manager_id = (int) get_user_meta($user_id, '_assigned_manager_id', true);
                 delete_user_meta($user_id, '_assigned_manager_id');
                 if ($old_manager_id > 0) {
                     $this->userService->rebuildManagerAgents($old_manager_id);
@@ -188,12 +188,12 @@ class UserController
         if (is_wp_error($result)) {
             return ApiResponse::error(ErrorCodes::INTERNAL_ERROR, $result->get_error_message(), 500);
         }
-        
-        $current_role = $update_args['role'] ?? current((array)$user->roles);
-        if (in_array($current_role, ['hm_field_agent', 'field_agent']) && isset($params['manager_id'])) {
-            $manager_id = (int)$params['manager_id'];
-            $old_manager_id = (int)get_user_meta($user_id, '_assigned_manager_id', true);
-            
+
+        $current_role = $update_args['role'] ?? current((array) $user->roles);
+        if ($current_role === 'hm_field_agent' && isset($params['manager_id'])) {
+            $manager_id = (int) $params['manager_id'];
+            $old_manager_id = (int) get_user_meta($user_id, '_assigned_manager_id', true);
+
             update_user_meta($user_id, '_assigned_manager_id', $manager_id);
             
             if ($manager_id > 0) {
@@ -224,8 +224,8 @@ class UserController
         if (!$user) {
             return ApiResponse::error(ErrorCodes::NOT_FOUND, 'User not found.', 404);
         }
-        
-        if (in_array('administrator', (array)$user->roles) || in_array('hm_administrator', (array)$user->roles)) {
+
+        if (in_array('administrator', $user->roles)) {
             return ApiResponse::error(ErrorCodes::FORBIDDEN, 'Cannot delete a super admin account via this endpoint.', 403);
         }
         
@@ -255,7 +255,7 @@ class UserController
         if (!$current_user) {
             throw new ApiException('Unauthorized', ErrorCodes::UNAUTHORIZED, 401);
         }
-        $is_admin = in_array('administrator', (array)$current_user->roles) || in_array('hm_administrator', (array)$current_user->roles);
+        $is_admin = in_array('administrator', (array) $current_user->roles);
         if (!$is_admin) {
             throw new ApiException('Forbidden', ErrorCodes::FORBIDDEN, 403);
         }

@@ -26,17 +26,16 @@ class UserRepository
         ];
 
         // 1. Role filter
+        $allowed_roles = ['hm_manager', 'hm_field_agent', 'hm_marketing'];
         if (!empty($args['role'])) {
             $role = sanitize_text_field($args['role']);
-            if ($role === 'hm_manager') {
-                $query_args['role__in'] = ['hm_manager'];
-            } elseif ($role === 'hm_field_agent') {
-                $query_args['role__in'] = ['hm_field_agent'];
-            } elseif ($role === 'hm_marketing') {
-                $query_args['role__in'] = ['hm_marketing'];
+            if (in_array($role, $allowed_roles, true)) {
+                $query_args['role__in'] = [$role];
             } else {
-                $query_args['role'] = $role;
+                $query_args['role__in'] = ['__invalid_role__'];
             }
+        } else {
+            $query_args['role__in'] = $allowed_roles;
         }
 
         // 2. Status filter
