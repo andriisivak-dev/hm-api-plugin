@@ -68,17 +68,40 @@ class DashboardController
         }
 
         if ($is_admin) {
-            $user_counts = count_users();
-            $supervisors = $user_counts['avail_roles']['hm_manager'] ?? 0;
-            $agents      = $user_counts['avail_roles']['hm_field_agent'] ?? 0;
-            $marketing   = $user_counts['avail_roles']['hm_marketing'] ?? 0;
-            
             $stats['users'] = [
-                'total'       => $supervisors + $agents + $marketing,
-                'supervisors' => $supervisors,
-                'agents'      => $agents,
-                'marketing'   => $marketing,
+                'total'       => 0,
+                'supervisors' => 0,
+                'agents'      => 0,
+                'marketing'   => 0,
             ];
+
+            $roles_map = [
+                'hm_manager'     => 'supervisors',
+                'hm_field_agent' => 'agents',
+                'hm_marketing'   => 'marketing',
+            ];
+
+            foreach ($roles_map as $role => $key) {
+                $q = new \WP_User_Query([
+                    'role'       => $role,
+                    'fields'     => 'ID',
+                    'meta_query' => [
+                        'relation' => 'OR',
+                        [
+                            'key'     => '_user_status',
+                            'value'   => 'inactive',
+                            'compare' => '!=',
+                        ],
+                        [
+                            'key'     => '_user_status',
+                            'compare' => 'NOT EXISTS',
+                        ],
+                    ]
+                ]);
+                $count = $q->get_total();
+                $stats['users'][$key] = $count;
+                $stats['users']['total'] += $count;
+            }
         }
 
         return ApiResponse::success($stats);
