@@ -177,8 +177,9 @@ class DTOMapper
             }
         }
 
-        $agent_ids_str = get_user_meta($user_id, '_assigned_agent_ids', true);
-        $agents = !empty($agent_ids_str) ? json_decode($agent_ids_str, true) : [];
+        $agent_ids_raw = get_user_meta($user_id, '_assigned_agent_ids', true);
+        $agents = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string)$agent_ids_raw, true) : []);
+        $agents = is_array($agents) ? $agents : [];
 
         // Count cases (simplified, real app might use WP_Query for accuracy)
         $cases_count = [

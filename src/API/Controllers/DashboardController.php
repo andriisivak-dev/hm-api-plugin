@@ -36,7 +36,8 @@ class DashboardController
         if (!$is_admin && !$is_marketing) {
             if ($is_manager) {
                 $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
-                $agent_ids = !empty($agent_ids_raw) ? json_decode($agent_ids_raw, true) : [];
+                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string)$agent_ids_raw, true) : []);
+                $agent_ids = is_array($agent_ids) ? $agent_ids : [];
                 $agent_ids[] = $current_user_id;
                 $args['author__in'] = $agent_ids;
             } else {
