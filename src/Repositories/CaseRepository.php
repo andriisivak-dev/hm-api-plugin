@@ -24,15 +24,15 @@ class CaseRepository
      */
     public function getCases(array $args = []): array
     {
-        $page     = isset($args['page']) ? max(1, (int) $args['page']) : 1;
+        $page = isset($args['page']) ? max(1, (int) $args['page']) : 1;
         $per_page = isset($args['per_page']) ? (int) $args['per_page'] : 20;
-        
+
         $query_args = [
-            'post_type'      => CasePostType::POST_TYPE,
-            'post_status'    => 'any', // We filter via post_status if 'status' argument is passed
+            'post_type' => CasePostType::POST_TYPE,
+            'post_status' => 'any', // We filter via post_status if 'status' argument is passed
             'posts_per_page' => $per_page,
-            'paged'          => $page,
-            'fields'         => 'ids',
+            'paged' => $page,
+            'fields' => 'ids',
         ];
 
         // 1. Status filter
@@ -47,11 +47,21 @@ class CaseRepository
             $query_args['post_status'] = ['draft', 'in_review', 'returned', 'approved', 'rejected'];
         }
 
-        // 2. Author/Submitter filter (Array of user IDs to scope permissions)
-        if (isset($args['author__in']) && is_array($args['author__in'])) {
+        // 2. Author/Submitter filter
+        if (!empty($args['submitted_by'])) {
+            $requested_author = $args['submitted_by'] === 'my' ? get_current_user_id() : (int) $args['submitted_by'];
+
+            if (isset($args['author__in']) && is_array($args['author__in'])) {
+                if (in_array($requested_author, $args['author__in'])) {
+                    $query_args['author'] = $requested_author;
+                } else {
+                    $query_args['author__in'] = [0]; // Force no results if requested unallowed author
+                }
+            } else {
+                $query_args['author'] = $requested_author;
+            }
+        } elseif (isset($args['author__in']) && is_array($args['author__in'])) {
             $query_args['author__in'] = $args['author__in'];
-        } elseif (!empty($args['submitted_by'])) {
-            $query_args['author'] = (int) $args['submitted_by'];
         }
 
         // 3. Taxonomy filters (dynamic from FormFieldMap)
@@ -62,8 +72,8 @@ class CaseRepository
                 if (!empty($args[$tax_slug])) {
                     $tax_query[] = [
                         'taxonomy' => $tax_slug,
-                        'field'    => 'slug',
-                        'terms'    => $args[$tax_slug],
+                        'field' => 'slug',
+                        'terms' => $args[$tax_slug],
                     ];
                 }
             }
@@ -86,16 +96,16 @@ class CaseRepository
         $date_query = [];
         if (!empty($args['date_from'])) {
             $date_query[] = [
-                'after'     => $args['date_from'],
+                'after' => $args['date_from'],
                 'inclusive' => true,
-                'column'    => 'post_date',
+                'column' => 'post_date',
             ];
         }
         if (!empty($args['date_to'])) {
             $date_query[] = [
-                'before'    => $args['date_to'],
+                'before' => $args['date_to'],
                 'inclusive' => true,
-                'column'    => 'post_date',
+                'column' => 'post_date',
             ];
         }
         if (count($date_query) > 0) {
@@ -105,8 +115,8 @@ class CaseRepository
         // 6. Order & Orderby
         $orderby_allowed = ['date', 'title', 'status']; // 'status' might need special mapping or fallback to standard post_status sorting
         $orderby = !empty($args['orderby']) && in_array($args['orderby'], $orderby_allowed) ? $args['orderby'] : 'date';
-        $order   = !empty($args['order']) && strtolower($args['order']) === 'asc' ? 'ASC' : 'DESC';
-        
+        $order = !empty($args['order']) && strtolower($args['order']) === 'asc' ? 'ASC' : 'DESC';
+
         if ($orderby === 'status') {
             $query_args['orderby'] = 'post_status';
         } else {
@@ -118,11 +128,11 @@ class CaseRepository
         $query = new WP_Query($query_args);
 
         return [
-            'cases'       => $query->posts,
-            'total'       => $query->found_posts,
+            'cases' => $query->posts,
+            'total' => $query->found_posts,
             'total_pages' => $query->max_num_pages,
-            'page'        => $page,
-            'per_page'    => $per_page,
+            'page' => $page,
+            'per_page' => $per_page,
         ];
     }
 }
