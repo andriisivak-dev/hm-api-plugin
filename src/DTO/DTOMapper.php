@@ -30,23 +30,23 @@ class DTOMapper
         $supervisor_user = get_userdata($supervisor_id);
 
         $dto = [
-            'id'           => $post->ID,
-            'title'        => $post->post_title,
-            'status'       => $post->post_status,
-            'progress'     => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
+            'id' => $post->ID,
+            'title' => $post->post_title,
+            'status' => $post->post_status,
+            'progress' => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
             'current_step' => $case_raw['current_step'],
-            'total_steps'  => $case_raw['total_steps'],
-            'author'       => $author_user ? [
-                'id'        => $author_user->ID,
+            'total_steps' => $case_raw['total_steps'],
+            'author' => $author_user ? [
+                'id' => $author_user->ID,
                 'full_name' => $author_user->display_name,
-                'role'      => !empty($author_user->roles) ? $author_user->roles[0] : ''
+                'role' => !empty($author_user->roles) ? $author_user->roles[0] : ''
             ] : null,
-            'reviewer'     => $supervisor_user ? [
-                'id'        => $supervisor_user->ID,
+            'reviewer' => $supervisor_user ? [
+                'id' => $supervisor_user->ID,
                 'full_name' => $supervisor_user->display_name,
             ] : null,
-            'created_at'   => get_the_date('c', $post),
-            'updated_at'   => get_the_modified_date('c', $post),
+            'created_at' => get_the_date('c', $post),
+            'updated_at' => get_the_modified_date('c', $post),
             'submitted_at' => get_post_meta($post->ID, '_case_submitted_at', true) ?: null,
         ];
 
@@ -60,22 +60,25 @@ class DTOMapper
                     if (!empty($terms) && !is_wp_error($terms)) {
                         $field_val = $terms[0]->name;
                     }
-                } 
+                }
                 // Or if it has a meta key
                 elseif (!empty($map_entry['storage']['meta_key'])) {
                     $field_val = get_post_meta($post->ID, $map_entry['storage']['meta_key'], true);
-                } 
+                }
                 // Fallback to form data JSON
                 elseif (!empty($case_raw['hm_form_data'][$map_entry['field_id']])) {
                     $field_val = $case_raw['hm_form_data'][$map_entry['field_id']];
                 }
 
-                // Add to root of list item, using a sanitized key. Often the label or taxonomy slug is used.
-                // We'll use taxonomy slug if present, otherwise meta_key without underscore, otherwise label
-                $key = $map_entry['storage']['taxonomy'] 
-                        ?? ltrim($map_entry['storage']['meta_key'] ?? '', '_case_') 
-                        ?: sanitize_title($map_entry['label']);
-                
+                // Add to root of list item. Use the exact taxonomy slug or meta_key to match frontend expectations.
+                if (!empty($map_entry['storage']['taxonomy'])) {
+                    $key = $map_entry['storage']['taxonomy'];
+                } elseif (!empty($map_entry['storage']['meta_key'])) {
+                    $key = $map_entry['storage']['meta_key'];
+                } else {
+                    $key = sanitize_title($map_entry['label']);
+                }
+
                 $dto[$key] = $field_val;
             }
         }
@@ -109,8 +112,8 @@ class DTOMapper
                     foreach ($terms as $term) {
                         $taxonomies[$tax_slug][] = [
                             'term_id' => $term->term_id,
-                            'name'    => $term->name,
-                            'slug'    => $term->slug
+                            'name' => $term->name,
+                            'slug' => $term->slug
                         ];
                     }
                 }
@@ -127,32 +130,32 @@ class DTOMapper
         $review_history = !empty($history_raw) ? json_decode($history_raw, true) : [];
 
         return [
-            'id'             => $post->ID,
-            'title'          => $post->post_title,
-            'status'         => $post->post_status,
-            'progress'       => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
-            'current_step'   => $case_raw['current_step'],
-            'total_steps'    => $case_raw['total_steps'],
-            'gf_form_id'     => (int) get_post_meta($post->ID, 'hm_form_id', true),
-            'form_data'      => $case_raw['hm_form_data'],
-            'taxonomies'     => $taxonomies,
-            'meta_fields'    => $meta_fields,
-            'author'         => $author_user ? [
-                'id'        => $author_user->ID,
+            'id' => $post->ID,
+            'title' => $post->post_title,
+            'status' => $post->post_status,
+            'progress' => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
+            'current_step' => $case_raw['current_step'],
+            'total_steps' => $case_raw['total_steps'],
+            'gf_form_id' => (int) get_post_meta($post->ID, 'hm_form_id', true),
+            'form_data' => $case_raw['hm_form_data'],
+            'taxonomies' => $taxonomies,
+            'meta_fields' => $meta_fields,
+            'author' => $author_user ? [
+                'id' => $author_user->ID,
                 'full_name' => $author_user->display_name,
-                'role'      => !empty($author_user->roles) ? $author_user->roles[0] : ''
+                'role' => !empty($author_user->roles) ? $author_user->roles[0] : ''
             ] : null,
-            'reviewer'       => $supervisor_user ? [
-                'id'        => $supervisor_user->ID,
+            'reviewer' => $supervisor_user ? [
+                'id' => $supervisor_user->ID,
                 'full_name' => $supervisor_user->display_name,
-                'role'      => !empty($supervisor_user->roles) ? $supervisor_user->roles[0] : ''
+                'role' => !empty($supervisor_user->roles) ? $supervisor_user->roles[0] : ''
             ] : null,
             'review_message' => $case_raw['return_reason'] ?: null,
             'review_history' => $review_history,
-            'permissions'    => $permissions,
-            'created_at'     => get_the_date('c', $post),
-            'updated_at'     => get_the_modified_date('c', $post),
-            'submitted_at'   => get_post_meta($post->ID, '_case_submitted_at', true) ?: null,
+            'permissions' => $permissions,
+            'created_at' => get_the_date('c', $post),
+            'updated_at' => get_the_modified_date('c', $post),
+            'submitted_at' => get_post_meta($post->ID, '_case_submitted_at', true) ?: null,
         ];
     }
 
@@ -164,42 +167,42 @@ class DTOMapper
         }
 
         $status = get_user_meta($user_id, '_user_status', true) ?: 'active';
-        
+
         $supervisor_id = (int) get_user_meta($user_id, '_assigned_manager_id', true);
         $supervisor = null;
         if ($supervisor_id > 0) {
             $sup_user = get_userdata($supervisor_id);
             if ($sup_user) {
                 $supervisor = [
-                    'id'        => $sup_user->ID,
+                    'id' => $sup_user->ID,
                     'full_name' => $sup_user->display_name
                 ];
             }
         }
 
         $agent_ids_raw = get_user_meta($user_id, '_assigned_agent_ids', true);
-        $agents = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string)$agent_ids_raw, true) : []);
+        $agents = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
         $agents = is_array($agents) ? $agents : [];
 
         // Count cases (simplified, real app might use WP_Query for accuracy)
         $cases_count = [
-            'total'     => 0,
-            'draft'     => 0,
+            'total' => 0,
+            'draft' => 0,
             'in_review' => 0,
-            'approved'  => 0
+            'approved' => 0
         ];
 
         return [
-            'id'          => $user->ID,
-            'full_name'   => $user->display_name,
-            'email'       => $user->user_email,
-            'role'        => !empty($user->roles) ? $user->roles[0] : '',
-            'status'      => $status,
-            'avatar_url'  => get_avatar_url($user->ID), // Could use WP avatar
-            'supervisor'  => $supervisor,
-            'agents'      => $agents, // array of IDs, could hydrate
+            'id' => $user->ID,
+            'full_name' => $user->display_name,
+            'email' => $user->user_email,
+            'role' => !empty($user->roles) ? $user->roles[0] : '',
+            'status' => $status,
+            'avatar_url' => get_avatar_url($user->ID), // Could use WP avatar
+            'supervisor' => $supervisor,
+            'agents' => $agents, // array of IDs, could hydrate
             'cases_count' => $cases_count,
-            'created_at'  => get_date_from_gmt($user->user_registered, 'c'),
+            'created_at' => get_date_from_gmt($user->user_registered, 'c'),
         ];
     }
 
@@ -209,19 +212,20 @@ class DTOMapper
         $case_title = $case_post ? $case_post->post_title : 'Unknown Case';
 
         return [
-            'id'         => (int) $notif_raw['id'],
-            'type'       => $notif_raw['type'],
-            'case_id'    => (int) $notif_raw['case_id'],
+            'id' => (int) $notif_raw['id'],
+            'type' => $notif_raw['type'],
+            'case_id' => (int) $notif_raw['case_id'],
             'case_title' => $case_title,
-            'message'    => $notif_raw['message'],
-            'is_read'    => (bool) $notif_raw['is_read'],
+            'message' => $notif_raw['message'],
+            'is_read' => (bool) $notif_raw['is_read'],
             'created_at' => gmdate('c', strtotime($notif_raw['created_at'])),
         ];
     }
 
     private function calculateProgress(int $current_step, int $total_steps): int
     {
-        if ($total_steps <= 0) return 0;
+        if ($total_steps <= 0)
+            return 0;
         return (int) min(100, max(0, round(($current_step / $total_steps) * 100)));
     }
 }
