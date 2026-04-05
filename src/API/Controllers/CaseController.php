@@ -57,7 +57,7 @@ class CaseController
         if (!$is_admin && !$is_marketing) {
             if ($is_manager) {
                 $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
-                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string)$agent_ids_raw, true) : []);
+                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
                 $agent_ids = is_array($agent_ids) ? $agent_ids : [];
                 $agent_ids[] = $current_user_id; // Include own cases
                 $args['author__in'] = $agent_ids;
@@ -73,17 +73,17 @@ class CaseController
         // Ideally we use a DTO here (Phase 7). For now, simple hydration via getCase.
         $cases = [];
         foreach ($result['cases'] as $case_id) {
-            $raw_case = $this->caseService->getCase((int)$case_id);
+            $raw_case = $this->caseService->getCase((int) $case_id);
             if ($raw_case) {
-                $cases[] = $this->dtoMapper->toCaseListItem((int)$case_id, $raw_case);
+                $cases[] = $this->dtoMapper->toCaseListItem((int) $case_id, $raw_case);
             }
         }
 
         return ApiResponse::success($cases, '', [
-            'total'       => $result['total'],
+            'total' => $result['total'],
             'total_pages' => $result['total_pages'],
-            'page'        => $result['page'],
-            'per_page'    => $result['per_page'],
+            'page' => $result['page'],
+            'per_page' => $result['per_page'],
         ]);
     }
 
@@ -92,7 +92,7 @@ class CaseController
         // 1. Enforce login check via generic middleware (done in Router / Router callback).
         // For the library, we do not restrict by role or authorship; all logged-in users 
         // can view cases that are 'approved'.
-        
+
         $args = $request->get_params();
 
         // Only approved cases are allowed in the library
@@ -102,20 +102,20 @@ class CaseController
 
         $cases = [];
         foreach ($result['cases'] as $case_id) {
-            $raw_case = $this->caseService->getCase((int)$case_id);
+            $raw_case = $this->caseService->getCase((int) $case_id);
             if ($raw_case) {
                 // Double check it is approved due to legacy statuses handling
-                if ($raw_case['status'] === 'approved' || $raw_case['status'] === 'complete') {
-                    $cases[] = $this->dtoMapper->toCaseListItem((int)$case_id, $raw_case);
+                if ($raw_case['post_status'] === 'approved' || $raw_case['post_status'] === 'complete') {
+                    $cases[] = $this->dtoMapper->toCaseListItem((int) $case_id, $raw_case);
                 }
             }
         }
 
         return ApiResponse::success($cases, '', [
-            'total'       => count($cases), // Fallback if custom filtering reduces count
+            'total' => count($cases), // Fallback if custom filtering reduces count
             'total_pages' => $result['total_pages'],
-            'page'        => $result['page'],
-            'per_page'    => $result['per_page'],
+            'page' => $result['page'],
+            'per_page' => $result['per_page'],
         ]);
     }
 
@@ -127,7 +127,7 @@ class CaseController
         if (!$form_id) {
             return ApiResponse::error(ErrorCodes::VALIDATION_ERROR, __('form_id is required', 'csp'), 400);
         }
-        
+
         // Default total_steps fallback
         if (!$total_steps) {
             $total_steps = 1;
@@ -143,7 +143,7 @@ class CaseController
             );
         }
 
-        return ApiResponse::success($this->caseService->getCase((int)$result), __('Case created successfully', 'csp'), [], 201);
+        return ApiResponse::success($this->caseService->getCase((int) $result), __('Case created successfully', 'csp'), [], 201);
     }
 
     public function show(WP_REST_Request $request)
@@ -338,7 +338,7 @@ class CaseController
         if (!$is_admin && !$is_marketing) {
             if ($is_manager) {
                 $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
-                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string)$agent_ids_raw, true) : []);
+                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
                 $agent_ids = is_array($agent_ids) ? $agent_ids : [];
                 $agent_ids[] = $current_user_id;
                 $query_args['author__in'] = $agent_ids;
