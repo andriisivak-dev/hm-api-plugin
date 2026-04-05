@@ -29,6 +29,7 @@ abstract class AbstractTaxonomy
                 'show_admin_column' => true,
                 'hierarchical'      => true,
                 'rewrite'           => false,
+                'update_count_callback' => '_update_generic_term_count',
             ]
         );
     }

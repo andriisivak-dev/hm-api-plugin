@@ -36,7 +36,7 @@ class DashboardController
         if (!$is_admin && !$is_marketing) {
             if ($is_manager) {
                 $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
-                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string)$agent_ids_raw, true) : []);
+                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
                 $agent_ids = is_array($agent_ids) ? $agent_ids : [];
                 $agent_ids[] = $current_user_id;
                 $args['author__in'] = $agent_ids;
@@ -51,11 +51,11 @@ class DashboardController
         // Calculate stats
         $stats = [
             'pending_review' => 0,
-            'returned'       => 0,
-            'approved'       => 0,
-            'rejected'       => 0,
-            'draft'          => 0,
-            'total'          => $result['total'],
+            'returned' => 0,
+            'approved' => 0,
+            'rejected' => 0,
+            'draft' => 0,
+            'total' => $result['total'],
         ];
 
         foreach ($result['cases'] as $case_id) {
@@ -69,31 +69,31 @@ class DashboardController
 
         if ($is_admin) {
             $stats['users'] = [
-                'total'       => 0,
+                'total' => 0,
                 'supervisors' => 0,
-                'agents'      => 0,
-                'marketing'   => 0,
+                'agents' => 0,
+                'marketing' => 0,
             ];
 
             $roles_map = [
-                'hm_manager'     => 'supervisors',
+                'hm_manager' => 'supervisors',
                 'hm_field_agent' => 'agents',
-                'hm_marketing'   => 'marketing',
+                'hm_marketing' => 'marketing',
             ];
 
             foreach ($roles_map as $role => $key) {
                 $q = new \WP_User_Query([
-                    'role'       => $role,
-                    'fields'     => 'ID',
+                    'role' => $role,
+                    'fields' => 'ID',
                     'meta_query' => [
                         'relation' => 'OR',
                         [
-                            'key'     => '_user_status',
-                            'value'   => 'inactive',
+                            'key' => '_user_status',
+                            'value' => 'inactive',
                             'compare' => '!=',
                         ],
                         [
-                            'key'     => '_user_status',
+                            'key' => '_user_status',
                             'compare' => 'NOT EXISTS',
                         ],
                     ]
@@ -109,24 +109,36 @@ class DashboardController
 
     public function getFilters(WP_REST_Request $request)
     {
+        $current_user_id = get_current_user_id();
+        $user = get_userdata($current_user_id);
+
         // Dynamic filters based on FormFieldMap
         $filters = [
-            'product_types'     => [],
+            'statuses' => [
+                ['id' => 'draft', 'name' => __('Draft', 'csp')],
+                ['id' => 'in_review', 'name' => __('Submitted', 'csp')],
+                ['id' => 'returned', 'name' => __('Returned', 'csp')],
+                ['id' => 'approved', 'name' => __('Approved', 'csp')],
+                ['id' => 'rejected', 'name' => __('Rejected', 'csp')]
+            ],
+            'product_types' => [],
             'industry_segments' => [],
-            'machine_types'     => [],
-            'machine_makes'     => [],
-            'tool_brands'       => [],
-            'solution_types'    => [],
-            'submitted_by'      => []
+            'machine_types' => [],
+            'machine_makes' => [],
+            'tool_brands' => [],
+            'solution_types' => [],
+            'submitted_by' => [
+                ['id' => 'my', 'name' => __('My Cases', 'csp')]
+            ]
         ];
 
         $taxonomies_map = [
-            'hm_product_type'     => 'product_types',
+            'hm_product_type' => 'product_types',
             'hm_industry_segment' => 'industry_segments',
-            'hm_machine_type'     => 'machine_types',
-            'hm_machine_make'     => 'machine_makes',
-            'hm_tool_brand'       => 'tool_brands',
-            'hm_solution_type'    => 'solution_types',
+            'hm_machine_type' => 'machine_types',
+            'hm_machine_make' => 'machine_makes',
+            'hm_tool_brand' => 'tool_brands',
+            'hm_solution_type' => 'solution_types',
         ];
 
         foreach ($taxonomies_map as $tax_slug => $filter_key) {
@@ -135,9 +147,48 @@ class DashboardController
                 foreach ($terms as $term) {
                     $filters[$filter_key][] = [
                         'term_id' => $term->term_id,
-                        'name'    => $term->name,
-                        'slug'    => $term->slug,
-                        'count'   => $term->count
+                        'name' => $term->name,
+                        'slug' => $term->slug,
+                        'count' => $term->count
+                    ];
+                }
+            }
+        }
+
+        if ($user) {
+            $is_admin = in_array('administrator', $user->roles);
+            $is_manager = in_array('hm_manager', $user->roles);
+            $is_marketing = in_array('hm_marketing', $user->roles);
+
+            global $wpdb;
+            $author_ids = [];
+
+            if ($is_admin || $is_marketing) {
+                // Anyone who has written a case
+                $author_ids = $wpdb->get_col(
+                    $wpdb->prepare("SELECT DISTINCT post_author FROM {$wpdb->posts} WHERE post_type = %s", 'hm_case')
+                );
+            } elseif ($is_manager) {
+                $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
+                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
+                $agent_ids = is_array($agent_ids) ? $agent_ids : [];
+
+                if (!empty($agent_ids)) {
+                    $agent_ids_in = implode(',', array_map('intval', $agent_ids));
+                    $author_ids = $wpdb->get_col(
+                        $wpdb->prepare("SELECT DISTINCT post_author FROM {$wpdb->posts} WHERE post_type = %s AND post_author IN ({$agent_ids_in}) AND post_author != %d", 'hm_case', $current_user_id)
+                    );
+                }
+            }
+
+            if (!empty($author_ids)) {
+                $authors = get_users(['include' => $author_ids]);
+                foreach ($authors as $author) {
+                    if ($author->ID === $current_user_id)
+                        continue;
+                    $filters['submitted_by'][] = [
+                        'id' => (string) $author->ID,
+                        'name' => trim($author->first_name . ' ' . $author->last_name) ?: $author->display_name ?: $author->user_login
                     ];
                 }
             }
