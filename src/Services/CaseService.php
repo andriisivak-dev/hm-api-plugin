@@ -60,7 +60,7 @@ class CaseService
         update_post_meta($case_id, 'total_steps', $total_steps);
 
         // 3. current_step
-        update_post_meta($case_id, 'current_step', 1);
+        update_post_meta($case_id, 'current_step', 0);
 
         // Save form_id just in case we need to reference which schema it uses
         update_post_meta($case_id, 'hm_form_id', $form_id);
