@@ -33,7 +33,7 @@ class NotificationController
             $notifications[] = $this->dtoMapper->toNotification($notif);
         }
 
-        return ApiResponse::success($notifications, null, [
+        return ApiResponse::success($notifications, '', [
             'total'       => $result['total'],
             'total_pages' => $result['total_pages'],
             'page'        => $result['page'],
