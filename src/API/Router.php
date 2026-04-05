@@ -43,6 +43,7 @@ class Router
         $this->addRoute($ns, 'GET', '/forms/(?P<id>\d+)/schema', FormController::class, 'getSchema');
 
         // 6.2 Cases
+        $this->addRoute($ns, 'GET', '/case-library', CaseController::class, 'library');
         $this->addRoute($ns, 'GET', '/cases', CaseController::class, 'index');
         $this->addRoute($ns, 'POST', '/cases', CaseController::class, 'create');
         $this->addRoute($ns, 'GET', '/cases/(?P<id>\d+)', CaseController::class, 'show');
@@ -81,7 +82,7 @@ class Router
     private function addRoute(string $namespace, string $method, string $route, string $controller, string $action): void
     {
         register_rest_route($namespace, $route, [
-            'methods'  => $method,
+            'methods' => $method,
             'callback' => function (WP_REST_Request $request) use ($controller, $action) {
                 return $this->handle($request, $controller, $action);
             },
@@ -95,7 +96,7 @@ class Router
     {
         // Add middlewares explicitly per pipeline
         $pipeline = new MiddlewarePipeline();
-        
+
         // Middleware registration could be injected via container, but we'll instantiate for simplicity based on stub
         if (class_exists(SanitizeMiddleware::class)) {
             $pipeline->pipe(new SanitizeMiddleware());

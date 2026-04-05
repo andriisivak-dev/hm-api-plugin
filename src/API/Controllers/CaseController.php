@@ -87,6 +87,38 @@ class CaseController
         ]);
     }
 
+    public function library(WP_REST_Request $request)
+    {
+        // 1. Enforce login check via generic middleware (done in Router / Router callback).
+        // For the library, we do not restrict by role or authorship; all logged-in users 
+        // can view cases that are 'approved'.
+        
+        $args = $request->get_params();
+
+        // Only approved cases are allowed in the library
+        $args['status'] = 'approved';
+
+        $result = $this->caseRepo->getCases($args);
+
+        $cases = [];
+        foreach ($result['cases'] as $case_id) {
+            $raw_case = $this->caseService->getCase((int)$case_id);
+            if ($raw_case) {
+                // Double check it is approved due to legacy statuses handling
+                if ($raw_case['status'] === 'approved' || $raw_case['status'] === 'complete') {
+                    $cases[] = $this->dtoMapper->toCaseListItem((int)$case_id, $raw_case);
+                }
+            }
+        }
+
+        return ApiResponse::success($cases, '', [
+            'total'       => count($cases), // Fallback if custom filtering reduces count
+            'total_pages' => $result['total_pages'],
+            'page'        => $result['page'],
+            'per_page'    => $result['per_page'],
+        ]);
+    }
+
     public function create(WP_REST_Request $request)
     {
         $form_id = (int) $request->get_param('form_id');
