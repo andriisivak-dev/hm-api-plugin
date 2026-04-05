@@ -32,6 +32,54 @@ class RoleManager
         }
 
         $this->assign_capabilities();
+
+        // Prevent admin access for non-admin custom roles
+        add_action('admin_init', [$this, 'restrict_admin_access']);
+        // Hide admin bar for these roles
+        add_filter('show_admin_bar', [$this, 'hide_admin_bar']);
+    }
+
+    public function hide_admin_bar($show)
+    {
+        $user = wp_get_current_user();
+        if (!$user || !$user->exists()) {
+            return $show;
+        }
+
+        $blocked_roles = ['hm_marketing', 'hm_field_agent', 'hm_manager'];
+        $user_roles = (array) $user->roles;
+
+        $has_blocked_role = array_intersect($blocked_roles, $user_roles);
+        $is_admin = in_array('administrator', $user_roles, true);
+
+        if (!empty($has_blocked_role) && !$is_admin) {
+            return false;
+        }
+
+        return $show;
+    }
+
+    public function restrict_admin_access(): void
+    {
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            return;
+        }
+
+        $user = wp_get_current_user();
+        if (!$user || !$user->exists()) {
+            return;
+        }
+
+        $blocked_roles = ['hm_marketing', 'hm_field_agent', 'hm_manager'];
+        $user_roles = (array) $user->roles;
+
+        $has_blocked_role = array_intersect($blocked_roles, $user_roles);
+        $is_admin = in_array('administrator', $user_roles, true);
+
+        if (!empty($has_blocked_role) && !$is_admin) {
+            wp_safe_redirect(home_url('/'));
+            exit;
+        }
     }
 
     private function assign_capabilities(): void
