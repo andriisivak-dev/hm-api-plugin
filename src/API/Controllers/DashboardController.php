@@ -159,11 +159,19 @@ class DashboardController
             $is_admin = in_array('administrator', $user->roles);
             $is_manager = in_array('hm_manager', $user->roles);
             $is_marketing = in_array('hm_marketing', $user->roles);
+            $context = $request->get_param('context');
 
             global $wpdb;
             $author_ids = [];
 
-            if ($is_admin || $is_marketing) {
+            if ($context === 'library') {
+                $author_ids = $wpdb->get_col(
+                    $wpdb->prepare(
+                        "SELECT DISTINCT post_author FROM {$wpdb->posts} WHERE post_type = %s AND post_status IN ('approved', 'complete')",
+                        'hm_case'
+                    )
+                );
+            } elseif ($is_admin || $is_marketing) {
                 // Anyone who has written a case
                 $author_ids = $wpdb->get_col(
                     $wpdb->prepare("SELECT DISTINCT post_author FROM {$wpdb->posts} WHERE post_type = %s", 'hm_case')
@@ -195,5 +203,51 @@ class DashboardController
         }
 
         return ApiResponse::success($filters);
+    }
+
+    public function autocomplete(WP_REST_Request $request)
+    {
+        global $wpdb;
+
+        $field = sanitize_text_field($request->get_param('field'));
+        $term = sanitize_text_field($request->get_param('term'));
+        $context = sanitize_text_field($request->get_param('context'));
+
+        if (strlen($term) < 1) {
+            return ApiResponse::success([]);
+        }
+
+        $meta_key_map = [
+            'customer_name' => '_case_customer_name',
+            'tool_specification' => '_case_tool_specification',
+            'insert_specification' => '_case_insert_specification'
+        ];
+
+        if (!isset($meta_key_map[$field])) {
+            return ApiResponse::error(ErrorCodes::INVALID_PARAMETER, 'Invalid field for autocomplete', 400);
+        }
+
+        $meta_key = $meta_key_map[$field];
+        $like = '%' . $wpdb->esc_like($term) . '%';
+
+        // Base query
+        $sql = "SELECT DISTINCT pm.meta_value FROM {$wpdb->postmeta} pm 
+                JOIN {$wpdb->posts} p ON p.ID = pm.post_id 
+                WHERE pm.meta_key = %s AND pm.meta_value LIKE %s AND p.post_type = 'hm_case'";
+
+        if ($context === 'library') {
+            $sql .= " AND p.post_status IN ('approved', 'complete')";
+        }
+
+        $sql .= " ORDER BY pm.meta_value ASC LIMIT 10";
+
+        $results = $wpdb->get_col($wpdb->prepare($sql, $meta_key, $like));
+
+        // Format for frontend
+        $formatted = array_map(function ($value) {
+            return ['text' => $value, 'value' => $value];
+        }, $results);
+
+        return ApiResponse::success($formatted);
     }
 }

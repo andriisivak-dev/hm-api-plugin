@@ -13,4 +13,5 @@ class ErrorCodes
     public const VALIDATION_ERROR = 'CSP_VALIDATION_ERROR';
     public const INTERNAL_ERROR = 'CSP_INTERNAL_ERROR';
     public const CONFLICT = 'CSP_CONFLICT';
+    public const INVALID_PARAMETER = 'CSP_INVALID_PARAMETER';
 }

@@ -86,10 +86,36 @@ class CaseRepository
         // 4. Search filter (Title + Customer Name)
         if (!empty($args['search'])) {
             $search = sanitize_text_field($args['search']);
-            // Standard WP search handles title. For custom meta 'customer_name', we might need to hook posts_where 
-            // or just rely on title which contains customer name per business rules.
-            // Since Title becomes "CustomerName #ID", a standard 's' search is sufficient!
             $query_args['s'] = $search;
+        }
+
+        // 4.5. Exact/Like Meta Data Filters
+        $meta_query = [];
+        if (!empty($args['customer_name'])) {
+            $meta_query[] = [
+                'key' => '_case_customer_name',
+                'value' => sanitize_text_field($args['customer_name']),
+                'compare' => 'LIKE'
+            ];
+        }
+        if (!empty($args['tool_specification'])) {
+            $meta_query[] = [
+                'key' => '_case_tool_specification',
+                'value' => sanitize_text_field($args['tool_specification']),
+                'compare' => 'LIKE'
+            ];
+        }
+        if (!empty($args['insert_specification'])) {
+            $meta_query[] = [
+                'key' => '_case_insert_specification',
+                'value' => sanitize_text_field($args['insert_specification']),
+                'compare' => 'LIKE'
+            ];
+        }
+
+        if (count($meta_query) > 0) {
+            $meta_query['relation'] = 'AND';
+            $query_args['meta_query'] = $meta_query;
         }
 
         // 5. Date filters
