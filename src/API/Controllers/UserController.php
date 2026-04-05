@@ -32,8 +32,9 @@ class UserController
         $current_user = get_userdata(get_current_user_id());
         $is_admin     = in_array('administrator', (array) $current_user->roles);
         $is_manager   = in_array('hm_manager', (array) $current_user->roles);
+        $is_marketing = in_array('hm_marketing', (array) $current_user->roles);
 
-        if (!$is_admin) {
+        if (!$is_admin && !$is_marketing) {
             if ($is_manager) {
                 // Manager only sees their assigned field agents
                 $agent_ids_raw = get_user_meta($current_user->ID, '_assigned_agent_ids', true);

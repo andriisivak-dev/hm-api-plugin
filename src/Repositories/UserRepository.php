@@ -16,13 +16,13 @@ class UserRepository
      */
     public function getUsers(array $args = []): array
     {
-        $page     = isset($args['page']) ? max(1, (int) $args['page']) : 1;
+        $page = isset($args['page']) ? max(1, (int) $args['page']) : 1;
         $per_page = isset($args['per_page']) ? (int) $args['per_page'] : 20;
 
         $query_args = [
-            'number'  => $per_page,
-            'paged'   => $page,
-            'fields'  => 'ID', // Return only IDs for performance and DTO mapping consistency
+            'number' => $per_page,
+            'paged' => $page,
+            'fields' => 'ID', // Return only IDs for performance and DTO mapping consistency
         ];
 
         // 1. Role filter
@@ -41,28 +41,28 @@ class UserRepository
         // 2. Status filter
         $meta_query = [];
         $status = !empty($args['status']) ? $args['status'] : 'active';
-        
+
         if ($status === 'active') {
             $meta_query[] = [
                 'relation' => 'OR',
                 [
-                    'key'     => '_user_status',
+                    'key' => '_user_status',
                     'compare' => 'NOT EXISTS',
                 ],
                 [
-                    'key'     => '_user_status',
-                    'value'   => 'inactive',
+                    'key' => '_user_status',
+                    'value' => 'inactive',
                     'compare' => '!=',
                 ]
             ];
         } elseif ($status === 'inactive') {
             $meta_query[] = [
-                'key'     => '_user_status',
-                'value'   => 'inactive',
+                'key' => '_user_status',
+                'value' => 'inactive',
                 'compare' => '=',
             ];
         }
-        
+
         // 3. Include specific users (scoping manager visibility)
         if (!empty($args['include'])) {
             $query_args['include'] = is_array($args['include']) ? $args['include'] : explode(',', $args['include']);
@@ -87,7 +87,7 @@ class UserRepository
 
         $arg_orderby = !empty($args['orderby']) ? $args['orderby'] : 'date';
         $orderby = $orderby_map[$arg_orderby] ?? 'user_registered';
-        $order   = !empty($args['order']) && strtolower($args['order']) === 'asc' ? 'ASC' : 'DESC';
+        $order = !empty($args['order']) && strtolower($args['order']) === 'asc' ? 'ASC' : 'DESC';
 
         $query_args['orderby'] = $orderby;
         $query_args['order'] = $order;
@@ -95,11 +95,11 @@ class UserRepository
         $query = new WP_User_Query($query_args);
 
         return [
-            'users'       => $query->get_results(),
-            'total'       => $query->get_total(),
+            'users' => $query->get_results(),
+            'total' => $query->get_total(),
             'total_pages' => $per_page > 0 ? (int) ceil($query->get_total() / $per_page) : 1,
-            'page'        => $page,
-            'per_page'    => $per_page,
+            'page' => $page,
+            'per_page' => $per_page,
         ];
     }
 }

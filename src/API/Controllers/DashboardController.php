@@ -67,7 +67,7 @@ class DashboardController
             }
         }
 
-        if ($is_admin) {
+        if ($is_admin || $is_marketing) {
             $stats['users'] = [
                 'total' => 0,
                 'supervisors' => 0,
