@@ -13,6 +13,7 @@ use CSP\API\Controllers\CaseController;
 use CSP\API\Controllers\DashboardController;
 use CSP\API\Controllers\UserController;
 use CSP\API\Controllers\NotificationController;
+use CSP\API\Controllers\CustomerController;
 use CSP\API\Middleware\MiddlewarePipeline;
 use CSP\API\Middleware\AuthMiddleware;
 use CSP\API\Middleware\PermissionMiddleware;
@@ -78,6 +79,15 @@ class Router
         $this->addRoute($ns, 'PATCH', '/notifications/(?P<id>\d+)/read', NotificationController::class, 'markAsRead');
         $this->addRoute($ns, 'POST', '/notifications/read-all', NotificationController::class, 'readAll');
         $this->addRoute($ns, 'GET', '/notifications/unread-count', NotificationController::class, 'getUnreadCount');
+
+        // 6.9 Customers
+        $this->addRoute($ns, 'GET',    '/customers',                      CustomerController::class, 'index');
+        $this->addRoute($ns, 'POST',   '/customers',                      CustomerController::class, 'create');
+        $this->addRoute($ns, 'GET',    '/customers/stats',                CustomerController::class, 'stats');
+        $this->addRoute($ns, 'GET',    '/customers/(?P<id>\d+)',          CustomerController::class, 'show');
+        $this->addRoute($ns, 'PATCH',  '/customers/(?P<id>\d+)',          CustomerController::class, 'update');
+        $this->addRoute($ns, 'DELETE', '/customers/(?P<id>\d+)',          CustomerController::class, 'delete');
+        $this->addRoute($ns, 'POST',   '/customers/(?P<id>\d+)/logo',     CustomerController::class, 'uploadLogo');
     }
 
     private function addRoute(string $namespace, string $method, string $route, string $controller, string $action): void

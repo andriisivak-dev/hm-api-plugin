@@ -154,6 +154,11 @@ class Plugin
                 $c->get(\CSP\DTO\DTOMapper::class)
             );
         });
+
+        // Customers
+        $this->container->singleton(\CSP\API\Controllers\CustomerController::class, function () {
+            return new \CSP\API\Controllers\CustomerController();
+        });
     }
 
     private function boot(): void
@@ -174,5 +179,17 @@ class Plugin
             (new \CSP\Taxonomies\ToolBrandTaxonomy())->register();
             (new \CSP\Taxonomies\SolutionTypeTaxonomy())->register();
         });
+
+        // Customer DB schema auto-upgrade on every boot (non-destructive)
+        (new \CSP\Database\CustomerMigrations())->maybeUpgrade();
+
+        // Admin UI (menu pages, list table, CSV importer)
+        if (is_admin()) {
+            (new \CSP\Admin\Customers\CustomerAdminUI())->register();
+        }
+
+        // Gravity Forms integration (autocomplete, validation, location pre-fill)
+        // Registered directly — gform_enqueue_scripts fires before 'init'
+        (new \CSP\Admin\Customers\CustomerGravityForms())->register();
     }
 }

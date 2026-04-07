@@ -2,17 +2,18 @@
 
 > **Plugin Name:** HM Case Study API
 > **Package:** `hm/case-study-api`
-> **Version:** 1.0.0
+> **Version:** 1.1.0
 > **PHP Namespace:** `CSP\`
 > **Autoloading:** PSR-4 via Composer (`src/` → `CSP\`)
 > **WP Entry Hook:** `plugins_loaded`
 > **REST API Base URL:** `/wp-json/csp/v1`
 
+
 ---
 
 ## Overview
 
-A WordPress plugin that exposes a complete **REST API backend** for a Case Study management platform. The plugin registers a Custom Post Type (`hm_case`), six custom taxonomies, custom user roles, a notifications database table, and a full set of authenticated REST endpoints consumed by a standalone **Vue 3 SPA**.
+A WordPress plugin that exposes a complete **REST API backend** for a Case Study management platform. The plugin registers a Custom Post Type (`hm_case`), six custom taxonomies, custom user roles, a notifications database table, a **customers (clients) database table**, and a full set of authenticated REST endpoints consumed by a standalone **Vue 3 SPA**.
 
 **The plugin has zero frontend rendering responsibility.** All UI is handled by the SPA.
 
@@ -45,6 +46,7 @@ A WordPress plugin that exposes a complete **REST API backend** for a Case Study
 19. [Hooks](#19-hooks)
 20. [Exception Handling](#20-exception-handling)
 21. [Extension Guide](#21-extension-guide)
+22. [Customers Module](#22-customers-module)
 
 ---
 
@@ -73,6 +75,9 @@ hm-case-study-api/
 ├── hm-case-study-api.php           # Plugin entry point — registers plugins_loaded hook
 ├── composer.json                   # PSR-4: "CSP\\" => "src/"
 │
+├── assets/
+│   └── customers-import.js         # Admin JS for chunked CSV import
+│
 ├── src/
 │   │
 │   ├── Core/
@@ -87,7 +92,8 @@ hm-case-study-api/
 │   │   │   ├── FormController.php        # Form schema proxy — transforms GF schema for SPA consumption
 │   │   │   ├── DashboardController.php   # Stats counters + filter option lists (role-scoped)
 │   │   │   ├── UserController.php        # User listing (admin: all; manager: own agents only)
-│   │   │   └── NotificationController.php # Notification list / read / unread-count
+│   │   │   ├── NotificationController.php # Notification list / read / unread-count
+│   │   │   └── CustomerController.php    # Customers: full CRUD + logo upload (admin only)
 │   │   │
 │   │   ├── Middleware/
 │   │   │   ├── MiddlewarePipeline.php    # array_reduce chain executor
@@ -112,7 +118,8 @@ hm-case-study-api/
 │   ├── Repositories/
 │   │   ├── CaseRepository.php            # WP_Query abstraction with dynamic tax/date/author filters
 │   │   ├── UserRepository.php            # WP_User_Query abstraction with role/status/search
-│   │   └── NotificationRepository.php    # Raw $wpdb queries on {prefix}csp_notifications
+│   │   ├── NotificationRepository.php    # Raw $wpdb queries on {prefix}csp_notifications
+│   │   └── CustomerRepository.php        # Raw $wpdb queries on {prefix}csp_clients
 │   │
 │   ├── DTO/
 │   │   └── DTOMapper.php                 # toCaseListItem / toCaseDetail / toUser / toNotification
@@ -141,7 +148,15 @@ hm-case-study-api/
 │   │   └── RoleManager.php               # add_role() + add_cap() for all custom roles
 │   │
 │   ├── Database/
-│   │   └── Migrations.php                # dbDelta() CREATE TABLE for csp_notifications
+│   │   ├── Migrations.php                # dbDelta() CREATE TABLE for csp_notifications
+│   │   └── CustomerMigrations.php        # dbDelta() CREATE TABLE for csp_clients (customers)
+│   │
+│   ├── Admin/
+│   │   └── Customers/
+│   │       ├── CustomerAdminUI.php       # WP admin menu pages + AJAX handler for CSV import
+│   │       ├── CustomerListTable.php     # WP_List_Table implementation for customers list
+│   │       ├── CustomerImporter.php      # Chunked CSV importer (Google Sheets URL or direct CSV)
+│   │       └── CustomerGravityForms.php  # GF autocomplete, AJAX, validation, location pre-fill
 │   │
 │   ├── Hooks/
 │   │   └── UserHooks.php                 # Listens to user meta changes → rebuilds agent↔manager index
@@ -915,7 +930,7 @@ Each notification is simultaneously:
 
 ## 15. Database Schema
 
-### Custom Table: `{prefix}csp_notifications`
+### 15.1 Custom Table: `{prefix}csp_notifications`
 
 Created on plugin activation by `Migrations::up()` using `dbDelta()`:
 
@@ -935,7 +950,31 @@ CREATE TABLE {prefix}csp_notifications (
 ) ENGINE=InnoDB;
 ```
 
----
+### 15.2 Custom Table: `{prefix}csp_clients` (Customers)
+
+Created on plugin activation by `CustomerMigrations::up()` using `dbDelta()`. **Never dropped on deactivation or deletion** — all customer data is preserved.
+
+```sql
+CREATE TABLE {prefix}csp_clients (
+    id               BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    external_id      VARCHAR(50)      NOT NULL,
+    company_name     VARCHAR(255)     NOT NULL,
+    address          TEXT             NULL,
+    city             VARCHAR(120)     NULL,
+    state            VARCHAR(120)     NULL,
+    phone            VARCHAR(50)      NULL,
+    email            VARCHAR(191)     NULL,
+    customer_segment VARCHAR(100)     NULL,
+    billing_center   VARCHAR(100)     NULL,
+    logo_id          BIGINT UNSIGNED  NULL,
+    updated_at       DATETIME         NOT NULL,
+    PRIMARY KEY  (id),
+    UNIQUE KEY uniq_company (company_name),
+    KEY email (email)
+) ENGINE=InnoDB;
+```
+
+**Schema managed by:** `CustomerMigrations::maybeUpgrade()` — called on every `plugins_loaded`, uses `dbDelta()` so it is safe to run repeatedly and will apply only additive changes.
 
 ## 16. Post Meta Schema
 
@@ -1141,3 +1180,119 @@ $this->container->singleton(\CSP\API\Controllers\MyController::class, function (
 ```
 
 The full middleware pipeline (sanitize → auth → permission) runs automatically for all routes registered via `addRoute()`.
+
+---
+
+## 22. Customers Module
+
+Ported from the legacy `hemant-core` plugin. All existing routes, table name (`wp_csp_clients`), and external IDs are preserved — the database is **not migrated**, data remains untouched.
+
+### 22.1 REST API Endpoints
+
+**Base URL:** `/wp-json/csp/v1`  
+**Access:** `administrator` role only (all endpoints return `403 CSP_FORBIDDEN` otherwise)
+
+| Method | Endpoint | Controller method | Description |
+|---|---|---|---|
+| `GET` | `/customers` | `index` | Paginated customer list with optional search and billing_center filter |
+| `POST` | `/customers` | `create` | Create a new customer; accepts optional `logo` file upload |
+| `GET` | `/customers/stats` | `stats` | Returns `{ "total": N }` count |
+| `GET` | `/customers/{id}` | `show` | Single customer record |
+| `PATCH` | `/customers/{id}` | `update` | Update any field; accepts JSON body |
+| `DELETE` | `/customers/{id}` | `delete` | Hard-delete (no soft delete for customers) |
+| `POST` | `/customers/{id}/logo` | `uploadLogo` | Upload/replace customer logo (multipart `logo` field) |
+
+**`GET /customers` Query Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `page` | int | Default: 1 |
+| `per_page` | int | Default: 20 |
+| `search` | string | Wildcard on company_name, email, phone, address, city, state, billing_center |
+| `billing_center` | string | Exact match filter |
+
+**Customer DTO shape:**
+```json
+{
+  "id": 42,
+  "external_id": "CUST-20260101120000-0123",
+  "company_name": "Acme Corp",
+  "email": "info@acme.com",
+  "phone": "+1-555-0100",
+  "address": "123 Main St",
+  "city": "Springfield",
+  "state": "IL",
+  "billing_center": "MIDWEST",
+  "customer_segment": "Enterprise",
+  "logo_id": 0,
+  "logo_url": "",
+  "updated_at": "2026-03-10 14:30:00"
+}
+```
+
+**Logo upload** (`POST /customers/{id}/logo`):
+- Multipart form field: `logo`
+- Allowed types: SVG, PNG, JPG/JPEG, WEBP
+- Max size: 5 MB
+- Stored as a WP Media Library attachment; previous logo attachment is deleted on replace
+
+**`external_id` auto-generation:**  
+If omitted on create, generates `CUST-{YYYYMMDDHHmmss}-{4-digit-random}`. Retries up to 10 times for collision avoidance, falls back to UUID.
+
+---
+
+### 22.2 Admin UI (WP Admin)
+
+Two admin menu pages added under **Cases (hm_case)** post type in WP Admin:
+
+| Page slug | Title | Description |
+|---|---|---|
+| `csp-customers` | Customers | `WP_List_Table` with search, per-page 50, single/bulk delete |
+| `csp-customers-import` | Customers Import | Google Sheets URL or direct CSV import with chunked AJAX |
+
+**AJAX handler:** `wp_ajax_csp_customers_import_chunk` — requires `csp_customers_import` nonce, `manage_options` capability. Processes 200 rows per call; frontend JS loops until `done: true`.
+
+**CSV column mapping (flexible, header-name-based):**
+
+| Field | Accepted header names |
+|---|---|
+| external_id | `external_id`, `externalid`, `client_id`, `id` |
+| company_name | `company_name`, `company`, `client_name`, `name` |
+| address | `address`, `location` |
+| phone | `phone`, `phone_number` |
+| email | `email`, `email_address` |
+| customer_segment | `customer_segment`, `segment` |
+| city | `city` |
+| state | `state` |
+| billing_center | `billing_center`, `billingcentre`, `billing` |
+
+CSV files without headers fall back to positional column order.
+
+**Upsert logic:** if a row's `external_id` already exists in the table, the record is **updated** (not duplicated). If `external_id` is blank, it is derived from an MD5 hash of `company_name` prefixed with `IMP-`.
+
+---
+
+### 22.3 Gravity Forms Integration
+
+Registered by `CustomerGravityForms::register()` called in `Plugin::boot()`.
+
+| Hook | Purpose |
+|---|---|
+| `gform_enqueue_scripts` | Enqueues `jquery-ui-autocomplete` + CSS and injects inline JS for form ID 4 |
+| `wp_ajax_csp_search_clients` | AJAX: search customers by company name (min 2 chars), returns id/company_name/city/state |
+| `wp_ajax_nopriv_csp_search_clients` | Same, logged-out users |
+| `wp_ajax_csp_get_client_location` | AJAX: returns city/state for a given customer id (for pre-fill on edit) |
+| `wp_ajax_nopriv_csp_get_client_location` | Same |
+| `gform_validation` | Validates that field 99 (hidden customer ID) is filled — prevents free-text submission |
+| `gform_pre_submission_filter` | Overwrites city/state fields with authoritative values from DB when a client is selected |
+
+**GF field constants (Gravity Form ID 4):**
+
+| GF Field | ID | Purpose |
+|---|---|---|
+| Customer Name (visible text) | `100` | Autocomplete source input |
+| Customer ID (hidden) | `99` | Stores selected customer's DB id |
+| City | `2` | Auto-filled + locked to DB value |
+| State | `4` | Auto-filled + locked to DB value |
+
+> **Note:** The form target ID and field IDs are defined as class constants in `CustomerGravityForms` and match the Gravity Forms configuration exactly.
