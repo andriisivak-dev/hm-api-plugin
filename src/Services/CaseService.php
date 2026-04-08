@@ -120,15 +120,17 @@ class CaseService
         $hm_form_data = !empty($hm_form_data_raw) ? json_decode($hm_form_data_raw, true) : [];
 
         return [
-            'id' => $post->ID,
-            'title' => $post->post_title,
-            'post_status' => $post->post_status, // WP Post status
-            'author_id' => (int) get_post_meta($case_id, 'author_id', true),
-            'supervisor_id' => (int) get_post_meta($case_id, 'supervisor_id', true),
-            'total_steps' => (int) get_post_meta($case_id, 'total_steps', true),
-            'current_step' => (int) get_post_meta($case_id, 'current_step', true),
-            'return_reason' => get_post_meta($case_id, 'return_reason', true),
-            'hm_form_data' => $hm_form_data,
+            'id'              => $post->ID,
+            'title'           => $post->post_title,
+            'post_status'     => $post->post_status, // WP Post status
+            'author_id'       => (int) get_post_meta($case_id, 'author_id', true),
+            'supervisor_id'   => (int) get_post_meta($case_id, 'supervisor_id', true),
+            'approved_by_id'  => (int) get_post_meta($case_id, '_case_approved_by_id', true) ?: null,
+            'returned_by_id'  => (int) get_post_meta($case_id, '_case_returned_by_id', true) ?: null,
+            'total_steps'     => (int) get_post_meta($case_id, 'total_steps', true),
+            'current_step'    => (int) get_post_meta($case_id, 'current_step', true),
+            'return_reason'   => get_post_meta($case_id, 'return_reason', true),
+            'hm_form_data'    => $hm_form_data,
         ];
     }
 }

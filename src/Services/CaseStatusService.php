@@ -65,7 +65,12 @@ class CaseStatusService
             'post_status' => $next_status
         ]);
 
-        // 4. Dispatch Notifications
+        // 4. Record who approved (auto-approve: the submitter IS the approver)
+        if ($next_status === CaseStatus::APPROVED) {
+            update_post_meta($case_id, '_case_approved_by_id', $user_id);
+        }
+
+        // 5. Dispatch Notifications
         if ($next_status === CaseStatus::APPROVED) {
             $this->notificationService->onCaseApproved($case_id, (int)$case['author_id']);
         } else {
@@ -84,7 +89,7 @@ class CaseStatusService
             return new WP_Error('csp_forbidden', __('You cannot approve this case.', 'csp'), ['status' => 403]);
         }
 
-        return $this->transition($case_id, 'approve', null, function($case) {
+        return $this->transition($case_id, 'approve', null, $user_id, function($case) {
             $this->notificationService->onCaseApproved((int)$case['id'], (int)$case['author_id']);
         });
     }
@@ -99,7 +104,7 @@ class CaseStatusService
             return new WP_Error('csp_invalid_input', __('A reason must be provided.', 'csp'), ['status' => 400]);
         }
 
-        return $this->transition($case_id, 'reject', $reason, function($case) use ($reason) {
+        return $this->transition($case_id, 'reject', $reason, $user_id, function($case) use ($reason) {
             $this->notificationService->onCaseRejected((int)$case['id'], (int)$case['author_id'], $reason);
         });
     }
@@ -114,7 +119,7 @@ class CaseStatusService
             return new WP_Error('csp_invalid_input', __('A reason must be provided.', 'csp'), ['status' => 400]);
         }
 
-        return $this->transition($case_id, 'return', $reason, function($case) use ($reason) {
+        return $this->transition($case_id, 'return', $reason, $user_id, function($case) use ($reason) {
             $this->notificationService->onCaseReturned((int)$case['id'], (int)$case['author_id'], $reason);
         });
     }
@@ -138,6 +143,13 @@ class CaseStatusService
             update_post_meta($case_id, 'return_reason', sanitize_text_field($reason));
         }
 
+        // Record actor meta depending on target status
+        if ($status === CaseStatus::APPROVED) {
+            update_post_meta($case_id, '_case_approved_by_id', $user_id);
+        } elseif ($status === CaseStatus::RETURNED) {
+            update_post_meta($case_id, '_case_returned_by_id', $user_id);
+        }
+
         // Ensure terms are synced just in case
         $case = $this->caseService->getCase($case_id);
         $this->taxonomyService->syncTaxonomies($case_id, $case['hm_form_data']);
@@ -146,9 +158,15 @@ class CaseStatusService
     }
 
     /**
-     * Helper mapping method
+     * Internal FSM transition helper.
+     *
+     * @param int           $case_id
+     * @param string        $action      Transition action key (approve|reject|return).
+     * @param string|null   $reason      Optional reason text (required for reject/return).
+     * @param int           $actor_id    WP user ID of the person performing the action.
+     * @param callable      $onSuccess   Callback executed after a successful transition; receives the pre-transition case array.
      */
-    private function transition(int $case_id, string $action, ?string $reason, callable $onSuccess): array|WP_Error
+    private function transition(int $case_id, string $action, ?string $reason, int $actor_id, callable $onSuccess): array|WP_Error
     {
         $case = $this->caseService->getCase($case_id);
         $current_status = $case['post_status'];
@@ -168,6 +186,14 @@ class CaseStatusService
             update_post_meta($case_id, 'return_reason', sanitize_text_field($reason));
         } else {
             update_post_meta($case_id, 'return_reason', '');
+        }
+
+        // Record who performed the action
+        if ($next_status === CaseStatus::APPROVED) {
+            update_post_meta($case_id, '_case_approved_by_id', $actor_id);
+        } elseif ($next_status === CaseStatus::RETURNED) {
+            // Overwrite on repeat returns — intentional
+            update_post_meta($case_id, '_case_returned_by_id', $actor_id);
         }
 
         $onSuccess($case);

@@ -878,7 +878,14 @@ Single class responsible for all data shaping. Reads `FormFieldMap` in construct
 
 **`toCaseListItem(case_id, case_raw)`**
 
-Base fields: `id`, `title`, `status`, `progress`, `current_step`, `total_steps`, `author { id, full_name, role }`, `reviewer { id, full_name }`, `created_at`, `updated_at`, `submitted_at`
+Base fields: `id`, `title`, `status`, `progress`, `current_step`, `total_steps`, `author { id, full_name, role }`, `reviewer { id, full_name, role }`, `approved_by { id, full_name, role }`, `returned_by { id, full_name, role }`, `created_at`, `updated_at`, `submitted_at`
+
+- `author` — case creator.
+- `reviewer` — assigned supervisor (supervisor_id). `null` for admin/manager cases (auto-approved, no reviewer).
+- `approved_by` — who approved: for auto-approved cases (admin/manager submit) this equals the author; for field-agent cases it is the supervisor/admin who clicked Approve. `null` if not yet approved.
+- `returned_by` — last person to return the case for revision. `null` if never returned.
+
+All four user fields are built by the internal `buildUserStub(WP_User|false): ?array` helper — same shape `{id, full_name, role}` for consistency.
 
 Dynamic fields appended for each FormFieldMap entry with `display.in_list: true`:
 - If `storage.taxonomy` → fetches first term name via `wp_get_post_terms()`
@@ -887,7 +894,7 @@ Dynamic fields appended for each FormFieldMap entry with `display.in_list: true`
 
 **`toCaseDetail(case_id, case_raw, permissions)`**
 
-All list item fields plus: `gf_form_id`, `form_data` (raw JSON), `taxonomies` (grouped by taxonomy slug, full term objects), `meta_fields` (all FormFieldMap meta keys), `review_message`, `review_history[]`, `permissions {}`.
+All list item fields (including `approved_by` and `returned_by`) plus: `gf_form_id`, `form_data` (raw JSON), `taxonomies` (grouped by taxonomy slug, full term objects), `meta_fields` (all FormFieldMap meta keys), `review_message`, `review_history[]`, `permissions {}`.
 
 **`toUser(user_id)`**
 
@@ -987,9 +994,11 @@ CREATE TABLE {prefix}csp_clients (
 | `total_steps` | int | `CaseService::createDraftCase` | Total steps from form schema |
 | `current_step` | int | `CaseFormDataService::saveFormData` | Last step user was on |
 | `author_id` | int | `CaseService::createDraftCase` | Creator's WP user ID |
-| `supervisor_id` | int\|null | `CaseService::createDraftCase` | Assigned reviewer's WP user ID |
+| `supervisor_id` | int\|null | `CaseService::createDraftCase` | Assigned reviewer's WP user ID. `null` for admin/manager (auto-approved). |
 | `return_reason` | string | `CaseStatusService` | Most recent reject/return message |
 | `_case_submitted_at` | datetime string | `CaseStatusService::submit` | Timestamp of final submit |
+| `_case_approved_by_id` | int | `CaseStatusService` | WP user ID of the person who approved. For admin/manager (auto-approve) this is the submitter themselves; for field-agent cases it is the reviewer who clicked Approve. Cleared on status override away from `approved`. |
+| `_case_returned_by_id` | int | `CaseStatusService` | WP user ID of the reviewer who last returned the case for revision. Overwritten on every subsequent return. Cleared semantically (present but stale) when the case is re-submitted and moves out of `returned`. |
 | `_case_review_history` | JSON string | (planned) | Array of `{ status, changed_by, changed_at, message }` |
 
 ### Config-Driven Meta Keys (defined in `FormFieldMap.php`)

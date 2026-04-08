@@ -23,30 +23,29 @@ class DTOMapper
             return [];
         }
 
-        $author_id = (int) $case_raw['author_id'];
+        $author_id     = (int) $case_raw['author_id'];
         $supervisor_id = (int) $case_raw['supervisor_id'];
+        $approved_by_id = $case_raw['approved_by_id'] ?? null;
+        $returned_by_id = $case_raw['returned_by_id'] ?? null;
 
-        $author_user = get_userdata($author_id);
+        $author_user     = get_userdata($author_id);
         $supervisor_user = get_userdata($supervisor_id);
+        $approved_by_user = $approved_by_id ? get_userdata((int) $approved_by_id) : false;
+        $returned_by_user = $returned_by_id ? get_userdata((int) $returned_by_id) : false;
 
         $dto = [
-            'id' => $post->ID,
-            'title' => $post->post_title,
-            'status' => $post->post_status,
-            'progress' => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
+            'id'           => $post->ID,
+            'title'        => $post->post_title,
+            'status'       => $post->post_status,
+            'progress'     => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
             'current_step' => $case_raw['current_step'],
-            'total_steps' => $case_raw['total_steps'],
-            'author' => $author_user ? [
-                'id' => $author_user->ID,
-                'full_name' => $author_user->display_name,
-                'role' => !empty($author_user->roles) ? $author_user->roles[0] : ''
-            ] : null,
-            'reviewer' => $supervisor_user ? [
-                'id' => $supervisor_user->ID,
-                'full_name' => $supervisor_user->display_name,
-            ] : null,
-            'created_at' => get_the_date('c', $post),
-            'updated_at' => get_the_modified_date('c', $post),
+            'total_steps'  => $case_raw['total_steps'],
+            'author'       => $this->buildUserStub($author_user),
+            'reviewer'     => $this->buildUserStub($supervisor_user),
+            'approved_by'  => $this->buildUserStub($approved_by_user),
+            'returned_by'  => $this->buildUserStub($returned_by_user),
+            'created_at'   => get_the_date('c', $post),
+            'updated_at'   => get_the_modified_date('c', $post),
             'submitted_at' => get_post_meta($post->ID, '_case_submitted_at', true) ?: null,
         ];
 
@@ -93,13 +92,17 @@ class DTOMapper
             return [];
         }
 
-        $author_id = (int) $case_raw['author_id'];
-        $supervisor_id = (int) $case_raw['supervisor_id'];
+        $author_id      = (int) $case_raw['author_id'];
+        $supervisor_id  = (int) $case_raw['supervisor_id'];
+        $approved_by_id = $case_raw['approved_by_id'] ?? null;
+        $returned_by_id = $case_raw['returned_by_id'] ?? null;
 
-        $author_user = get_userdata($author_id);
-        $supervisor_user = get_userdata($supervisor_id);
+        $author_user      = get_userdata($author_id);
+        $supervisor_user  = get_userdata($supervisor_id);
+        $approved_by_user = $approved_by_id ? get_userdata((int) $approved_by_id) : false;
+        $returned_by_user = $returned_by_id ? get_userdata((int) $returned_by_id) : false;
 
-        $taxonomies = [];
+        $taxonomies  = [];
         $meta_fields = [];
 
         // Aggregate from FormFieldMap
@@ -112,8 +115,8 @@ class DTOMapper
                     foreach ($terms as $term) {
                         $taxonomies[$tax_slug][] = [
                             'term_id' => $term->term_id,
-                            'name' => $term->name,
-                            'slug' => $term->slug
+                            'name'    => $term->name,
+                            'slug'    => $term->slug
                         ];
                     }
                 }
@@ -126,36 +129,30 @@ class DTOMapper
         }
 
         // Review history logic
-        $history_raw = get_post_meta($post->ID, '_case_review_history', true);
+        $history_raw    = get_post_meta($post->ID, '_case_review_history', true);
         $review_history = !empty($history_raw) ? json_decode($history_raw, true) : [];
 
         return [
-            'id' => $post->ID,
-            'title' => $post->post_title,
-            'status' => $post->post_status,
-            'progress' => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
-            'current_step' => $case_raw['current_step'],
-            'total_steps' => $case_raw['total_steps'],
-            'gf_form_id' => (int) get_post_meta($post->ID, 'hm_form_id', true),
-            'form_data' => $case_raw['hm_form_data'],
-            'taxonomies' => $taxonomies,
-            'meta_fields' => $meta_fields,
-            'author' => $author_user ? [
-                'id' => $author_user->ID,
-                'full_name' => $author_user->display_name,
-                'role' => !empty($author_user->roles) ? $author_user->roles[0] : ''
-            ] : null,
-            'reviewer' => $supervisor_user ? [
-                'id' => $supervisor_user->ID,
-                'full_name' => $supervisor_user->display_name,
-                'role' => !empty($supervisor_user->roles) ? $supervisor_user->roles[0] : ''
-            ] : null,
+            'id'             => $post->ID,
+            'title'          => $post->post_title,
+            'status'         => $post->post_status,
+            'progress'       => $this->calculateProgress($case_raw['current_step'], $case_raw['total_steps']),
+            'current_step'   => $case_raw['current_step'],
+            'total_steps'    => $case_raw['total_steps'],
+            'gf_form_id'     => (int) get_post_meta($post->ID, 'hm_form_id', true),
+            'form_data'      => $case_raw['hm_form_data'],
+            'taxonomies'     => $taxonomies,
+            'meta_fields'    => $meta_fields,
+            'author'         => $this->buildUserStub($author_user),
+            'reviewer'       => $this->buildUserStub($supervisor_user),
+            'approved_by'    => $this->buildUserStub($approved_by_user),
+            'returned_by'    => $this->buildUserStub($returned_by_user),
             'review_message' => $case_raw['return_reason'] ?: null,
             'review_history' => $review_history,
-            'permissions' => $permissions,
-            'created_at' => get_the_date('c', $post),
-            'updated_at' => get_the_modified_date('c', $post),
-            'submitted_at' => get_post_meta($post->ID, '_case_submitted_at', true) ?: null,
+            'permissions'    => $permissions,
+            'created_at'     => get_the_date('c', $post),
+            'updated_at'     => get_the_modified_date('c', $post),
+            'submitted_at'   => get_post_meta($post->ID, '_case_submitted_at', true) ?: null,
         ];
     }
 
@@ -227,5 +224,27 @@ class DTOMapper
         if ($total_steps <= 0)
             return 0;
         return (int) min(100, max(0, round(($current_step / $total_steps) * 100)));
+    }
+
+    /**
+     * Build a minimal user stub object for API responses.
+     *
+     * Returns {id, full_name, role} when a valid WP_User is provided, or null otherwise.
+     * Used consistently for author, reviewer, approved_by, and returned_by fields.
+     *
+     * @param WP_User|false $user
+     * @return array{id:int,full_name:string,role:string}|null
+     */
+    private function buildUserStub(WP_User|false $user): ?array
+    {
+        if (!$user instanceof WP_User) {
+            return null;
+        }
+
+        return [
+            'id'        => $user->ID,
+            'full_name' => $user->display_name,
+            'role'      => !empty($user->roles) ? $user->roles[0] : '',
+        ];
     }
 }
