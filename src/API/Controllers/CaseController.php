@@ -305,12 +305,12 @@ class CaseController
 
         $roles = (array) $current_user->roles;
 
-        $is_admin = in_array('administrator', $roles, true) || in_array('hm_administrator', $roles, true);
-        $is_marketing = in_array('hm_marketing', $roles, true) || in_array('marketing', $roles, true);
-        $is_manager = in_array('hm_manager', $roles, true) || in_array('manager', $roles, true) || in_array('supervisor', $roles, true);
+        $is_admin = in_array('administrator', $roles, true);
+        $is_marketing = in_array('hm_marketing', $roles, true);
+        $is_manager = in_array('hm_manager', $roles, true);
 
-        // field_agent has no activities, super admin & marketing & managers can see
-        $can_view = $is_admin || $is_marketing || $is_manager;
+        // Only admin and manager can see activities; field_agent and marketing are forbidden.
+        $can_view = $is_admin || $is_manager;
         if (!$can_view) {
             return ApiResponse::error(ErrorCodes::FORBIDDEN, __('Forbidden', 'csp'), 403);
         }
@@ -331,20 +331,22 @@ class CaseController
         }
 
         $query_args = [
-            'posts_per_page' => -1,
-            'post_status' => ['publish', 'draft', 'in_review', 'returned', 'approved', 'rejected'],
+            // 'per_page' (not 'posts_per_page') is the key CaseRepository::getCases() reads.
+            // -1 means no pagination limit — we need ALL cases for accurate counting.
+            'per_page' => -1,
+            // 'status' (not 'post_status') is the key getCases() routes into WP_Query post_status.
+            // Include 'publish' for legacy cases that have not been migrated to custom statuses.
+            'status'   => ['draft', 'in_review', 'returned', 'approved', 'rejected', 'publish'],
         ];
 
-        if (!$is_admin && !$is_marketing) {
-            if ($is_manager) {
-                $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
-                $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
-                $agent_ids = is_array($agent_ids) ? $agent_ids : [];
-                $agent_ids[] = $current_user_id;
-                $query_args['author__in'] = $agent_ids;
-            } else {
-                $query_args['author__in'] = [$current_user_id];
-            }
+        // Admin sees ALL cases across all authors — no author constraint added.
+        // Manager sees own cases + cases by assigned agents.
+        if (!$is_admin) {
+            $agent_ids_raw = get_user_meta($current_user_id, '_assigned_agent_ids', true);
+            $agent_ids = is_array($agent_ids_raw) ? $agent_ids_raw : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
+            $agent_ids = is_array($agent_ids) ? $agent_ids : [];
+            $agent_ids[] = $current_user_id;
+            $query_args['author__in'] = $agent_ids;
         }
 
         $result = $this->caseRepo->getCases($query_args);
