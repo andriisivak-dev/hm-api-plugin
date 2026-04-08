@@ -88,20 +88,17 @@ class CaseService
     private function determineSupervisorId(\WP_User $user): ?int
     {
         if (in_array('administrator', $user->roles, true) || in_array('hm_administrator', $user->roles, true)) {
+            // Admin: auto-approved on submit — no supervisor needed.
             return null;
         }
 
         if (in_array('hm_manager', $user->roles, true)) {
-            // Manager's supervisor is Superadmin (an administrator)
-            $admins = get_users(['role' => 'administrator', 'fields' => 'ID', 'number' => 1]);
-            if (empty($admins)) {
-                $admins = get_users(['role' => 'hm_administrator', 'fields' => 'ID', 'number' => 1]);
-            }
-            return !empty($admins) ? (int) $admins[0] : null;
+            // Manager: auto-approved on submit — no supervisor needed.
+            return null;
         }
 
         if (in_array('hm_field_agent', $user->roles, true)) {
-            // Field Agent's supervisor is their assigned manager
+            // Field Agent's supervisor is their assigned manager.
             $manager_id = (int) get_user_meta($user->ID, '_assigned_manager_id', true);
             return $manager_id > 0 ? $manager_id : null;
         }

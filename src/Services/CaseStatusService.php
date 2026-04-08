@@ -45,9 +45,10 @@ class CaseStatusService
         
         $user = get_userdata($user_id);
         $is_admin = in_array('administrator', $user->roles) || in_array('hm_administrator', $user->roles);
+        $is_manager = in_array('hm_manager', $user->roles);
 
-        // If author is admin, it's auto-approved. Otherwise it goes to IN_REVIEW.
-        if ($is_admin) {
+        // If author is admin or manager, it's auto-approved. Otherwise it goes to IN_REVIEW.
+        if ($is_admin || $is_manager) {
             $next_status = CaseStatus::APPROVED;
         }
 
