@@ -106,28 +106,60 @@ class NotificationService
     {
         $ctx = $this->buildCaseContext($case_id);
 
-        $db_message = sprintf(
-            'Your case study "%s" (#%d) has been approved and is now published.',
-            $ctx['title'],
-            $case_id
-        );
+        // Determine the author's role to tailor the approval message.
+        $author       = get_userdata($author_id);
+        $author_roles = $author ? (array) $author->roles : [];
+        $is_field_agent = in_array('hm_field_agent', $author_roles, true);
 
-        $email_body = $this->renderEmail(
-            '✅ Your Case Study Has Been Approved',
-            sprintf(
-                '<p>Congratulations! Your case study has been reviewed and approved.</p>
-                 <table>
-                   <tr>
-                     <td><strong>Case:</strong></td>
-                     <td><a href="%1$s">%2$s</a> <em>(#%3$d)</em></td>
-                   </tr>
-                 </table>
-                 <p><a class="btn" href="%1$s">View Published Case →</a></p>',
-                esc_url($ctx['url']),
-                esc_html($ctx['title']),
+        if ($is_field_agent) {
+            // Field agent: case was reviewed and approved by a supervisor/admin.
+            $db_message = sprintf(
+                'Your case study "%s" (#%d) has been approved and is now published.',
+                $ctx['title'],
                 $case_id
-            )
-        );
+            );
+
+            $email_body = $this->renderEmail(
+                '✅ Your Case Study Has Been Approved',
+                sprintf(
+                    '<p>Congratulations! Your case study has been reviewed and approved.</p>
+                     <table>
+                       <tr>
+                         <td><strong>Case:</strong></td>
+                         <td><a href="%1$s">%2$s</a> <em>(#%3$d)</em></td>
+                       </tr>
+                     </table>
+                     <p><a class="btn" href="%1$s">View Published Case →</a></p>',
+                    esc_url($ctx['url']),
+                    esc_html($ctx['title']),
+                    $case_id
+                )
+            );
+        } else {
+            // Manager / superadmin: case was auto-published to the Case Library on submit.
+            $db_message = sprintf(
+                'Your case study "%s" (#%d) has been published in the Case Library.',
+                $ctx['title'],
+                $case_id
+            );
+
+            $email_body = $this->renderEmail(
+                '✅ Your Case Study Has Been Published',
+                sprintf(
+                    '<p>Your case study has been published in the Case Library.</p>
+                     <table>
+                       <tr>
+                         <td><strong>Case:</strong></td>
+                         <td><a href="%1$s">%2$s</a> <em>(#%3$d)</em></td>
+                       </tr>
+                     </table>
+                     <p><a class="btn" href="%1$s">View Published Case →</a></p>',
+                    esc_url($ctx['url']),
+                    esc_html($ctx['title']),
+                    $case_id
+                )
+            );
+        }
 
         $this->notify('case_approved', $case_id, $author_id, $db_message, $email_body);
     }
