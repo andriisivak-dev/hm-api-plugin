@@ -112,10 +112,10 @@ class CaseController
         }
 
         return ApiResponse::success($cases, '', [
-            'total' => count($cases), // Fallback if custom filtering reduces count
+            'total'       => $result['total'],
             'total_pages' => $result['total_pages'],
-            'page' => $result['page'],
-            'per_page' => $result['per_page'],
+            'page'        => $result['page'],
+            'per_page'    => $result['per_page'],
         ]);
     }
 
