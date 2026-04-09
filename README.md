@@ -794,7 +794,7 @@ Single centralised ACL service. All checks compute `{ status, is_author, is_supe
 | Method | Returns `true` when |
 |---|---|
 | `canView` | is_admin ∨ is_marketing ∨ is_author ∨ is_supervisor |
-| `canEdit` | admin (own: always; others: status ∈ {in_review, returned}); author: status ∈ {draft, returned}; supervisor: status ∈ {in_review, returned} |
+| `canEdit` | admin (own: always; others: status ∈ {in_review, returned, **approved**}); author: status ∈ {draft, returned}; supervisor: status ∈ {in_review, returned} |
 | `canDelete` | admin: always; author: status = draft only |
 | `canSubmit` | author only, status ∈ {draft, returned} |
 | `canApprove` | (admin ∧ ¬author) ∨ supervisor, status ∈ {in_review, returned} |
