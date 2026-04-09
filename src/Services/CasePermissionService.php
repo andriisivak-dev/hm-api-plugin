@@ -82,7 +82,8 @@ class CasePermissionService
         if ($info['is_admin']) {
             if ($info['is_author'])
                 return true;
-            return in_array($status, [CaseStatus::IN_REVIEW, CaseStatus::RETURNED], true);
+            // Admin can edit any case that is not in a terminal-only state (draft belongs to author).
+            return in_array($status, [CaseStatus::IN_REVIEW, CaseStatus::RETURNED, CaseStatus::APPROVED], true);
         }
 
         if ($info['is_author']) {
