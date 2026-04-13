@@ -205,6 +205,100 @@ class DashboardController
         return ApiResponse::success($filters);
     }
 
+    /**
+     * GET /dashboard/hierarchy
+     * Returns the full user hierarchy tree for Super Admin view only.
+     * Structure: { super_admin: {...}, managers: [ { ...manager, agents: [...] } ] }
+     *
+     * Access: administrator only → 403 for all other roles.
+     */
+    public function getHierarchy(WP_REST_Request $request)
+    {
+        $current_user = get_userdata(get_current_user_id());
+
+        if (!$current_user || !in_array('administrator', (array) $current_user->roles, true)) {
+            return ApiResponse::error(ErrorCodes::FORBIDDEN, __('Forbidden', 'csp'), 403);
+        }
+
+        // Build super admin stub
+        $super_admin = [
+            'id'          => $current_user->ID,
+            'full_name'   => $current_user->display_name,
+            'role'        => 'administrator',
+            'avatar_url'  => get_avatar_url($current_user->ID),
+        ];
+
+        // Fetch all active managers
+        $manager_query = new \WP_User_Query([
+            'role'   => 'hm_manager',
+            'fields' => 'ID',
+            'meta_query' => [
+                'relation' => 'OR',
+                [
+                    'key'     => '_user_status',
+                    'value'   => 'inactive',
+                    'compare' => '!=',
+                ],
+                [
+                    'key'     => '_user_status',
+                    'compare' => 'NOT EXISTS',
+                ],
+            ],
+            'orderby' => 'display_name',
+            'order'   => 'ASC',
+        ]);
+
+        $managers = [];
+
+        foreach ($manager_query->get_results() as $manager_id) {
+            $manager_id  = (int) $manager_id;
+            $manager_user = get_userdata($manager_id);
+            if (!$manager_user) {
+                continue;
+            }
+
+            // Fetch agents assigned to this manager
+            $agent_ids_raw = get_user_meta($manager_id, '_assigned_agent_ids', true);
+            $agent_ids = is_array($agent_ids_raw)
+                ? $agent_ids_raw
+                : (!empty($agent_ids_raw) ? json_decode((string) $agent_ids_raw, true) : []);
+            $agent_ids = is_array($agent_ids) ? array_map('intval', $agent_ids) : [];
+
+            $agents = [];
+            foreach ($agent_ids as $agent_id) {
+                $agent_user = get_userdata($agent_id);
+                if (!$agent_user) {
+                    continue;
+                }
+                $agent_status = get_user_meta($agent_id, '_user_status', true) ?: 'active';
+                $agents[] = [
+                    'id'         => $agent_user->ID,
+                    'full_name'  => $agent_user->display_name,
+                    'role'       => 'hm_field_agent',
+                    'status'     => $agent_status,
+                    'avatar_url' => get_avatar_url($agent_user->ID),
+                ];
+            }
+
+            $manager_status = get_user_meta($manager_id, '_user_status', true) ?: 'active';
+
+            $managers[] = [
+                'id'          => $manager_user->ID,
+                'full_name'   => $manager_user->display_name,
+                'role'        => 'hm_manager',
+                'status'      => $manager_status,
+                'avatar_url'  => get_avatar_url($manager_user->ID),
+                'agents'      => $agents,
+                'agents_count' => count($agents),
+            ];
+        }
+
+        return ApiResponse::success([
+            'super_admin' => $super_admin,
+            'managers'    => $managers,
+        ]);
+    }
+
     public function autocomplete(WP_REST_Request $request)
     {
         global $wpdb;

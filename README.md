@@ -676,6 +676,8 @@ The `override` field is not strictly validated server-side — any admin call to
 |---|---|---|---|
 | `GET` | `/dashboard/stats` | `DashboardController::getStats` | Activity panel counters, role-scoped |
 | `GET` | `/dashboard/filters` | `DashboardController::getFilters` | Taxonomy term lists for sidebar filter UI |
+| `GET` | `/dashboard/autocomplete` | `DashboardController::autocomplete` | Autocomplete suggestions for case meta fields |
+| `GET` | `/dashboard/hierarchy` | `DashboardController::getHierarchy` | Full user hierarchy tree. **Restricted to `administrator` only → 403 for all other roles.** |
 | `GET` | `/cases/activities` | `CaseController::getActivities` | Role-scoped activity counts (pending, returned, approved, rejected, draft). Restricted (403) for `field_agent`. |
 
 **Stats response `data`:**
@@ -705,6 +707,41 @@ Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; 
   "submitted_by": []
 }
 ```
+
+**Hierarchy response `data`** (`GET /dashboard/hierarchy`):
+
+Returns the complete two-level user hierarchy tree rooted at the current super admin. Accessible to `administrator` only.
+
+```json
+{
+  "super_admin": {
+    "id": 1,
+    "full_name": "Admin Name",
+    "role": "administrator",
+    "avatar_url": "https://..."
+  },
+  "managers": [
+    {
+      "id": 5,
+      "full_name": "Gitesh Sharma",
+      "role": "hm_manager",
+      "status": "active",
+      "avatar_url": "https://...",
+      "agents_count": 3,
+      "agents": [
+        { "id": 20, "full_name": "Priya Patel", "role": "hm_field_agent", "status": "active", "avatar_url": "https://..." },
+        { "id": 21, "full_name": "Raj Kumar",   "role": "hm_field_agent", "status": "active", "avatar_url": "https://..." }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- Managers are returned in ascending `display_name` order.
+- Agent lists are derived from the `_assigned_agent_ids` user meta stored on each `hm_manager` by `UserHooks`.
+- Only **active** managers are included in the response (status ≠ `inactive`).
+- Inactive agents may still appear if they remain in a manager's `_assigned_agent_ids` array; the frontend is responsible for visual differentiation if needed.
 
 ---
 

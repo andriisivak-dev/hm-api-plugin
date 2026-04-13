@@ -66,6 +66,7 @@ class Router
         $this->addRoute($ns, 'GET', '/dashboard/stats', DashboardController::class, 'getStats');
         $this->addRoute($ns, 'GET', '/dashboard/filters', DashboardController::class, 'getFilters');
         $this->addRoute($ns, 'GET', '/dashboard/autocomplete', DashboardController::class, 'autocomplete');
+        $this->addRoute($ns, 'GET', '/dashboard/hierarchy', DashboardController::class, 'getHierarchy');
 
         // 6.7 Users
         $this->addRoute($ns, 'GET', '/users', UserController::class, 'index');
