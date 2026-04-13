@@ -678,6 +678,7 @@ The `override` field is not strictly validated server-side — any admin call to
 | `GET` | `/dashboard/filters` | `DashboardController::getFilters` | Taxonomy term lists for sidebar filter UI |
 | `GET` | `/dashboard/autocomplete` | `DashboardController::autocomplete` | Autocomplete suggestions for case meta fields |
 | `GET` | `/dashboard/hierarchy` | `DashboardController::getHierarchy` | Full user hierarchy tree. **Restricted to `administrator` only → 403 for all other roles.** |
+| `GET` | `/dashboard/recent-activity` | `DashboardController::getRecentActivity` | Paginated feed of case events + new user registrations. **Admin only.** `?page` (default 1), `?per_page` (default 10, max 50). Returns pagination `meta`. |
 | `GET` | `/cases/activities` | `CaseController::getActivities` | Role-scoped activity counts (pending, returned, approved, rejected, draft). Restricted (403) for `field_agent`. |
 
 **Stats response `data`:**
@@ -742,6 +743,65 @@ Returns the complete two-level user hierarchy tree rooted at the current super a
 - Agent lists are derived from the `_assigned_agent_ids` user meta stored on each `hm_manager` by `UserHooks`.
 - Only **active** managers are included in the response (status ≠ `inactive`).
 - Inactive agents may still appear if they remain in a manager's `_assigned_agent_ids` array; the frontend is responsible for visual differentiation if needed.
+
+**Recent Activity response `data`** (`GET /dashboard/recent-activity`):
+
+Returns a merged, paginated, time-sorted feed of recent system actions. **Restricted to `administrator` only.**
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `page` | int | `1` | Page number |
+| `per_page` | int | `10` | Items per page (max 50) |
+
+Response includes a standard pagination `meta` object: `{ total, total_pages, page, per_page }`.
+
+**Actor resolution per `type`:**
+
+| `type` | Actor (`actor_name`) | Description |
+|---|---|---|
+| `case_submitted` | Field agent (`post_author`) | The agent who submitted the case |
+| `case_approved` | `_case_approved_by_id` user meta | Manager/admin who approved |
+| `case_returned` | `_case_returned_by_id` user meta | Manager/admin who returned |
+| `case_rejected` | *(empty — no actor stored)* | Frontend renders case + author only |
+| `user_registered` | — | New custom-role user joined |
+
+**Response shape — case event:**
+```json
+{
+  "id": "notif_42",
+  "type": "case_approved",
+  "case_id": 113,
+  "case_title": "AKSHAR INDUSTRIES #113",
+  "case_url": "https://heman-tools.localhost/case-study/?cid=113",
+  "case_author_name": "Priya Patel",
+  "actor_name": "Gitesh Sharma",
+  "message": "Your case study \"AKSHAR INDUSTRIES\" (#113) has been approved...",
+  "created_at": "2026-04-13T14:30:00+00:00"
+}
+```
+
+**Response shape — user registration event:**
+```json
+{
+  "id": "user_20",
+  "type": "user_registered",
+  "user_id": 20,
+  "user_name": "Priya Patel",
+  "user_role": "hm_field_agent",
+  "manager_name": "Gitesh Sharma",
+  "message": "",
+  "created_at": "2026-04-12T09:15:00+00:00"
+}
+```
+
+**Notes:**
+- Both sources are fetched up to `page × per_page` rows each, merged in memory, sorted by `created_at` DESC, then sliced to the correct page window.
+- `case_author_name` is always the `post_author` display name (the field agent who created the case).
+- `case_url` is the frontend deep-link `/case-study/?cid={id}` — not the WP permalink.
+- `manager_name` is populated via `_assigned_manager_id` user meta on the registered user.
+- Only custom-role users (`hm_manager`, `hm_field_agent`, `hm_marketing`) appear in `user_registered` events; administrator accounts are excluded.
 
 ---
 

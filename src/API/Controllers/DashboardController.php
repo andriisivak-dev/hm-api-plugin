@@ -222,36 +222,36 @@ class DashboardController
 
         // Build super admin stub
         $super_admin = [
-            'id'          => $current_user->ID,
-            'full_name'   => $current_user->display_name,
-            'role'        => 'administrator',
-            'avatar_url'  => get_avatar_url($current_user->ID),
+            'id' => $current_user->ID,
+            'full_name' => $current_user->display_name,
+            'role' => 'administrator',
+            'avatar_url' => get_avatar_url($current_user->ID),
         ];
 
         // Fetch all active managers
         $manager_query = new \WP_User_Query([
-            'role'   => 'hm_manager',
+            'role' => 'hm_manager',
             'fields' => 'ID',
             'meta_query' => [
                 'relation' => 'OR',
                 [
-                    'key'     => '_user_status',
-                    'value'   => 'inactive',
+                    'key' => '_user_status',
+                    'value' => 'inactive',
                     'compare' => '!=',
                 ],
                 [
-                    'key'     => '_user_status',
+                    'key' => '_user_status',
                     'compare' => 'NOT EXISTS',
                 ],
             ],
             'orderby' => 'display_name',
-            'order'   => 'ASC',
+            'order' => 'ASC',
         ]);
 
         $managers = [];
 
         foreach ($manager_query->get_results() as $manager_id) {
-            $manager_id  = (int) $manager_id;
+            $manager_id = (int) $manager_id;
             $manager_user = get_userdata($manager_id);
             if (!$manager_user) {
                 continue;
@@ -272,10 +272,10 @@ class DashboardController
                 }
                 $agent_status = get_user_meta($agent_id, '_user_status', true) ?: 'active';
                 $agents[] = [
-                    'id'         => $agent_user->ID,
-                    'full_name'  => $agent_user->display_name,
-                    'role'       => 'hm_field_agent',
-                    'status'     => $agent_status,
+                    'id' => $agent_user->ID,
+                    'full_name' => $agent_user->display_name,
+                    'role' => 'hm_field_agent',
+                    'status' => $agent_status,
                     'avatar_url' => get_avatar_url($agent_user->ID),
                 ];
             }
@@ -283,19 +283,19 @@ class DashboardController
             $manager_status = get_user_meta($manager_id, '_user_status', true) ?: 'active';
 
             $managers[] = [
-                'id'          => $manager_user->ID,
-                'full_name'   => $manager_user->display_name,
-                'role'        => 'hm_manager',
-                'status'      => $manager_status,
-                'avatar_url'  => get_avatar_url($manager_user->ID),
-                'agents'      => $agents,
+                'id' => $manager_user->ID,
+                'full_name' => $manager_user->display_name,
+                'role' => 'hm_manager',
+                'status' => $manager_status,
+                'avatar_url' => get_avatar_url($manager_user->ID),
+                'agents' => $agents,
                 'agents_count' => count($agents),
             ];
         }
 
         return ApiResponse::success([
             'super_admin' => $super_admin,
-            'managers'    => $managers,
+            'managers' => $managers,
         ]);
     }
 
@@ -343,5 +343,205 @@ class DashboardController
         }, $results);
 
         return ApiResponse::success($formatted);
+    }
+
+    /**
+     * GET /dashboard/recent-activity
+     *
+     * Returns a chronological, paginated feed of recent system actions.
+     * Sources:
+     *   1. Case events from {prefix}csp_notifications
+     *   2. New user registrations from {prefix}users (custom roles only)
+     *
+     * Actor resolution per event type:
+     *   - case_submitted  → post_author     (the field agent who submitted)
+     *   - case_approved   → _case_approved_by_id meta  (manager/admin who approved)
+     *   - case_returned   → _case_returned_by_id meta  (manager/admin who returned)
+     *   - case_rejected   → post_author is the field agent; actor is shown as the case author
+     *
+     * Each case event also includes:
+     *   - case_author_name  display_name of post_author (field agent who created the case)
+     *   - case_url          frontend deep-link /case-study/?cid={id}
+     *
+     * Access: administrator only → 403 for all other roles.
+     *
+     * Query params:
+     *   ?page      int  Page number (default 1)
+     *   ?per_page  int  Items per page (default 10, max 50)
+     */
+    public function getRecentActivity(WP_REST_Request $request): \WP_REST_Response
+    {
+        $current_user = get_userdata(get_current_user_id());
+
+        if (!$current_user || !in_array('administrator', (array) $current_user->roles, true)) {
+            return ApiResponse::error(ErrorCodes::FORBIDDEN, __('Forbidden', 'csp'), 403);
+        }
+
+        $per_page = min(50, max(1, (int) ($request->get_param('per_page') ?? 10)));
+        $page = max(1, (int) ($request->get_param('page') ?? 1));
+
+        // We fetch (page * per_page) items from each source, merge & sort, then slice.
+        // This gives correct ordering across both sources without complex UNION SQL.
+        $fetch_limit = $page * $per_page;
+
+        global $wpdb;
+
+        // ── 1. Case events from notifications table ─────────────────────────
+        $notif_table = $wpdb->prefix . 'csp_notifications';
+
+        $notif_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT n.id, n.type, n.case_id, n.message, n.created_at,
+                        p.post_author AS case_author_id, p.post_title AS case_title
+                 FROM {$notif_table} n
+                 LEFT JOIN {$wpdb->posts} p ON p.ID = n.case_id AND p.post_type = %s
+                 ORDER BY n.created_at DESC
+                 LIMIT %d",
+                'hm_case',
+                $fetch_limit
+            ),
+            ARRAY_A
+        );
+
+        // Count total notifications for pagination meta
+        $total_notifs = (int) $wpdb->get_var(
+            "SELECT COUNT(id) FROM {$notif_table}"
+        );
+
+        $activities = [];
+
+        foreach ((array) $notif_rows as $row) {
+            $type = $row['type'];
+            $case_id = (int) $row['case_id'];
+
+            // ── Resolve case author (field agent who created the case) ──────
+            $case_author_id = (int) ($row['case_author_id'] ?? 0);
+            $case_author_user = $case_author_id > 0 ? get_userdata($case_author_id) : false;
+            $case_author_name = $case_author_user ? $case_author_user->display_name : '';
+
+            // ── Resolve actor (who performed the status action) ─────────────
+            $actor_name = '';
+
+            if ($type === 'case_submitted') {
+                // Actor is the person who submitted = case author
+                $actor_name = $case_author_name;
+
+            } elseif ($type === 'case_approved') {
+                $approved_by_id = (int) get_post_meta($case_id, '_case_approved_by_id', true);
+                if ($approved_by_id > 0) {
+                    $actor_user = get_userdata($approved_by_id);
+                    $actor_name = $actor_user ? $actor_user->display_name : '';
+                }
+
+            } elseif ($type === 'case_returned') {
+                $returned_by_id = (int) get_post_meta($case_id, '_case_returned_by_id', true);
+                if ($returned_by_id > 0) {
+                    $actor_user = get_userdata($returned_by_id);
+                    $actor_name = $actor_user ? $actor_user->display_name : '';
+                }
+
+            } elseif ($type === 'case_rejected') {
+                // For rejected we show the case title + author; no specific actor stored.
+                // Leave actor_name empty; frontend renders it differently.
+            }
+
+            $case_url = home_url('/case-study/?cid=' . $case_id . '&mode=view');
+
+            $activities[] = [
+                'id' => 'notif_' . $row['id'],
+                'type' => $type,
+                'case_id' => $case_id,
+                'case_title' => $row['case_title'] ?: ('Case #' . $case_id),
+                'case_url' => $case_url,
+                'case_author_name' => $case_author_name,
+                'actor_name' => $actor_name,
+                'message' => $row['message'],
+                'created_at' => gmdate('c', strtotime($row['created_at'])),
+            ];
+        }
+
+        // ── 2. Recently registered custom-role users ────────────────────────
+        $user_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT u.ID, u.display_name, u.user_registered,
+                        um_mgr.meta_value AS manager_id
+                 FROM {$wpdb->users} u
+                 INNER JOIN {$wpdb->usermeta} um_cap
+                         ON um_cap.user_id = u.ID
+                        AND um_cap.meta_key = %s
+                 LEFT  JOIN {$wpdb->usermeta} um_mgr
+                         ON um_mgr.user_id = u.ID
+                        AND um_mgr.meta_key = '_assigned_manager_id'
+                 WHERE (um_cap.meta_value LIKE %s
+                    OR  um_cap.meta_value LIKE %s
+                    OR  um_cap.meta_value LIKE %s)
+                 ORDER BY u.user_registered DESC
+                 LIMIT %d",
+                $wpdb->prefix . 'capabilities',
+                '%hm_manager%',
+                '%hm_field_agent%',
+                '%hm_marketing%',
+                $fetch_limit
+            ),
+            ARRAY_A
+        );
+
+        // Count total custom-role users for pagination meta
+        $total_users = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(u.ID)
+                 FROM {$wpdb->users} u
+                 INNER JOIN {$wpdb->usermeta} um_cap
+                         ON um_cap.user_id = u.ID
+                        AND um_cap.meta_key = %s
+                 WHERE (um_cap.meta_value LIKE %s
+                    OR  um_cap.meta_value LIKE %s
+                    OR  um_cap.meta_value LIKE %s)",
+                $wpdb->prefix . 'capabilities',
+                '%hm_manager%',
+                '%hm_field_agent%',
+                '%hm_marketing%'
+            )
+        );
+
+        foreach ((array) $user_rows as $row) {
+            $user = get_userdata((int) $row['ID']);
+            $role = !empty($user->roles) ? $user->roles[0] : 'unknown';
+
+            $manager_name = '';
+            $manager_id = (int) ($row['manager_id'] ?? 0);
+            if ($manager_id > 0) {
+                $mgr_user = get_userdata($manager_id);
+                $manager_name = $mgr_user ? $mgr_user->display_name : '';
+            }
+
+            $activities[] = [
+                'id' => 'user_' . $row['ID'],
+                'type' => 'user_registered',
+                'user_id' => (int) $row['ID'],
+                'user_name' => $row['display_name'],
+                'user_role' => $role,
+                'manager_name' => $manager_name,
+                'message' => '',
+                'created_at' => gmdate('c', strtotime($row['user_registered'])),
+            ];
+        }
+
+        // ── 3. Merge, sort DESC, paginate ────────────────────────────────────
+        usort($activities, static function (array $a, array $b): int {
+            return strcmp($b['created_at'], $a['created_at']);
+        });
+
+        $total = $total_notifs + $total_users;
+        $offset = ($page - 1) * $per_page;
+        $page_items = array_slice($activities, $offset, $per_page);
+        $total_pages = $per_page > 0 ? (int) ceil($total / $per_page) : 1;
+
+        return ApiResponse::success($page_items, '', [
+            'total' => $total,
+            'total_pages' => $total_pages,
+            'page' => $page,
+            'per_page' => $per_page,
+        ]);
     }
 }
