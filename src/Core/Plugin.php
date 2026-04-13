@@ -57,6 +57,10 @@ class Plugin
             return new \CSP\Hooks\UserHooks($c->get(\CSP\Services\UserService::class));
         });
 
+        $this->container->singleton(\CSP\Hooks\CaseMediaHooks::class, function () {
+            return new \CSP\Hooks\CaseMediaHooks();
+        });
+
         $this->container->singleton(\CSP\Services\CaseService::class, function () {
             return new \CSP\Services\CaseService();
         });
@@ -166,6 +170,7 @@ class Plugin
         // Register API
         $this->container->get(Router::class)->register();
         $this->container->get(\CSP\Hooks\UserHooks::class)->register();
+        $this->container->get(\CSP\Hooks\CaseMediaHooks::class)->register();
 
         add_action('init', function () {
             $this->container->get(\CSP\PostTypes\CasePostType::class)->register();
