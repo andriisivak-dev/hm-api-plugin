@@ -208,7 +208,7 @@ class DashboardController
     /**
      * GET /dashboard/hierarchy
      * Returns the full user hierarchy tree for Super Admin view only.
-     * Structure: { super_admin: {...}, managers: [ { ...manager, agents: [...] } ] }
+     * Structure: { super_admin: {...}, managers: [ { ...manager, agents: [...] } ], marketing: [...] }
      *
      * Access: administrator only → 403 for all other roles.
      */
@@ -228,22 +228,24 @@ class DashboardController
             'avatar_url' => get_avatar_url($current_user->ID),
         ];
 
+        $active_meta_query = [
+            'relation' => 'OR',
+            [
+                'key' => '_user_status',
+                'value' => 'inactive',
+                'compare' => '!=',
+            ],
+            [
+                'key' => '_user_status',
+                'compare' => 'NOT EXISTS',
+            ],
+        ];
+
         // Fetch all active managers
         $manager_query = new \WP_User_Query([
             'role' => 'hm_manager',
             'fields' => 'ID',
-            'meta_query' => [
-                'relation' => 'OR',
-                [
-                    'key' => '_user_status',
-                    'value' => 'inactive',
-                    'compare' => '!=',
-                ],
-                [
-                    'key' => '_user_status',
-                    'compare' => 'NOT EXISTS',
-                ],
-            ],
+            'meta_query' => $active_meta_query,
             'orderby' => 'display_name',
             'order' => 'ASC',
         ]);
@@ -293,9 +295,39 @@ class DashboardController
             ];
         }
 
+        // Fetch all active marketing users (same level as managers)
+        $marketing_query = new \WP_User_Query([
+            'role' => 'hm_marketing',
+            'fields' => 'ID',
+            'meta_query' => $active_meta_query,
+            'orderby' => 'display_name',
+            'order' => 'ASC',
+        ]);
+
+        $marketing = [];
+
+        foreach ($marketing_query->get_results() as $marketing_id) {
+            $marketing_id = (int) $marketing_id;
+            $marketing_user = get_userdata($marketing_id);
+            if (!$marketing_user) {
+                continue;
+            }
+
+            $marketing_status = get_user_meta($marketing_id, '_user_status', true) ?: 'active';
+
+            $marketing[] = [
+                'id' => $marketing_user->ID,
+                'full_name' => $marketing_user->display_name,
+                'role' => 'hm_marketing',
+                'status' => $marketing_status,
+                'avatar_url' => get_avatar_url($marketing_user->ID),
+            ];
+        }
+
         return ApiResponse::success([
             'super_admin' => $super_admin,
             'managers' => $managers,
+            'marketing' => $marketing,
         ]);
     }
 

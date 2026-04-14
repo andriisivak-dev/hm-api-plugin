@@ -677,7 +677,7 @@ The `override` field is not strictly validated server-side — any admin call to
 | `GET` | `/dashboard/stats` | `DashboardController::getStats` | Activity panel counters, role-scoped |
 | `GET` | `/dashboard/filters` | `DashboardController::getFilters` | Taxonomy term lists for sidebar filter UI |
 | `GET` | `/dashboard/autocomplete` | `DashboardController::autocomplete` | Autocomplete suggestions for case meta fields |
-| `GET` | `/dashboard/hierarchy` | `DashboardController::getHierarchy` | Full user hierarchy tree. **Restricted to `administrator` only → 403 for all other roles.** |
+| `GET` | `/dashboard/hierarchy` | `DashboardController::getHierarchy` | Full user hierarchy tree (`hm_manager` + `hm_marketing` at root level). **Restricted to `administrator` only → 403 for all other roles.** |
 | `GET` | `/dashboard/recent-activity` | `DashboardController::getRecentActivity` | Paginated feed of case events + new user registrations. **Admin only.** `?page` (default 1), `?per_page` (default 10, max 50). Returns pagination `meta`. |
 | `GET` | `/cases/activities` | `CaseController::getActivities` | Role-scoped activity counts (pending, returned, approved, rejected, draft). Restricted (403) for `field_agent`. |
 
@@ -734,14 +734,24 @@ Returns the complete two-level user hierarchy tree rooted at the current super a
         { "id": 21, "full_name": "Raj Kumar",   "role": "hm_field_agent", "status": "active", "avatar_url": "https://..." }
       ]
     }
+  ],
+  "marketing": [
+    {
+      "id": 9,
+      "full_name": "Anita Rao",
+      "role": "hm_marketing",
+      "status": "active",
+      "avatar_url": "https://..."
+    }
   ]
 }
 ```
 
 **Notes:**
 - Managers are returned in ascending `display_name` order.
+- Marketing users are returned in ascending `display_name` order.
 - Agent lists are derived from the `_assigned_agent_ids` user meta stored on each `hm_manager` by `UserHooks`.
-- Only **active** managers are included in the response (status ≠ `inactive`).
+- Only **active** managers and marketing users are included in the response (status ≠ `inactive`).
 - Inactive agents may still appear if they remain in a manager's `_assigned_agent_ids` array; the frontend is responsible for visual differentiation if needed.
 
 **Recent Activity response `data`** (`GET /dashboard/recent-activity`):
