@@ -8,14 +8,75 @@ use WP_REST_Request;
 use CSP\API\Responses\ApiResponse;
 use CSP\API\Responses\ErrorCodes;
 use CSP\Repositories\CaseRepository;
+use CSP\Services\GravityFormsService;
 
 class DashboardController
 {
-    private CaseRepository $caseRepo;
+    /** Gravity Forms ID for the case study form. */
+    private const GF_FORM_ID = 4;
 
-    public function __construct(CaseRepository $caseRepo)
+    /** Field ID for the Tool Brand select within the GF form. */
+    private const TOOL_BRAND_FIELD_ID = 229;
+
+    private CaseRepository $caseRepo;
+    private GravityFormsService $gfService;
+
+    public function __construct(CaseRepository $caseRepo, GravityFormsService $gfService)
     {
-        $this->caseRepo = $caseRepo;
+        $this->caseRepo   = $caseRepo;
+        $this->gfService  = $gfService;
+    }
+
+    /**
+     * Merges all hm_tool_brand taxonomy terms (including empty) with the
+     * current choice list from Gravity Forms field #229.
+     *
+     * Strategy:
+     *   1. Fetch all existing taxonomy terms (hide_empty: false) — historical source.
+     *   2. Fetch GF field choices — authoritative/current source.
+     *   3. Index terms by slug. For each GF choice whose slug is not already
+     *      in the index, append a stub entry (term_id: null, count: 0).
+     *   4. Return merged list sorted alphabetically by name.
+     *
+     * Degrades gracefully: if GFAPI is unavailable, returns only taxonomy terms.
+     *
+     * @return array<int, array{term_id: int|null, name: string, slug: string, count: int}>
+     */
+    private function resolveToolBrands(): array
+    {
+        // 1. All existing taxonomy terms, including those with count = 0
+        $terms = get_terms(['taxonomy' => 'hm_tool_brand', 'hide_empty' => false]);
+        $indexed = []; // keyed by slug for O(1) dedup lookup
+
+        if (!is_wp_error($terms)) {
+            foreach ($terms as $term) {
+                $indexed[$term->slug] = [
+                    'term_id' => $term->term_id,
+                    'name'    => $term->name,
+                    'slug'    => $term->slug,
+                    'count'   => $term->count,
+                ];
+            }
+        }
+
+        // 2. Merge GF choices — add any that don't have a taxonomy term yet
+        $gf_choices = $this->gfService->getFieldChoices(self::GF_FORM_ID, self::TOOL_BRAND_FIELD_ID);
+        foreach ($gf_choices as $choice) {
+            if (!isset($indexed[$choice['slug']])) {
+                $indexed[$choice['slug']] = [
+                    'term_id' => null,
+                    'name'    => $choice['name'],
+                    'slug'    => $choice['slug'],
+                    'count'   => 0,
+                ];
+            }
+        }
+
+        // 3. Sort alphabetically by name (case-insensitive)
+        $result = array_values($indexed);
+        usort($result, static fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+        return $result;
     }
 
     public function getStats(WP_REST_Request $request)
@@ -142,14 +203,19 @@ class DashboardController
         ];
 
         foreach ($taxonomies_map as $tax_slug => $filter_key) {
+            if ($tax_slug === 'hm_tool_brand') {
+                $filters[$filter_key] = $this->resolveToolBrands();
+                continue;
+            }
+
             $terms = get_terms(['taxonomy' => $tax_slug, 'hide_empty' => true]);
             if (!is_wp_error($terms)) {
                 foreach ($terms as $term) {
                     $filters[$filter_key][] = [
                         'term_id' => $term->term_id,
-                        'name' => $term->name,
-                        'slug' => $term->slug,
-                        'count' => $term->count
+                        'name'    => $term->name,
+                        'slug'    => $term->slug,
+                        'count'   => $term->count
                     ];
                 }
             }

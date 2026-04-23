@@ -140,7 +140,8 @@ class Plugin
 
         $this->container->singleton(\CSP\API\Controllers\DashboardController::class, function ($c) {
             return new \CSP\API\Controllers\DashboardController(
-                $c->get(\CSP\Repositories\CaseRepository::class)
+                $c->get(\CSP\Repositories\CaseRepository::class),
+                $c->get(\CSP\Services\GravityFormsService::class)
             );
         });
 

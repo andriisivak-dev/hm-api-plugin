@@ -134,6 +134,58 @@ class GravityFormsService
     }
 
     /**
+     * Returns the choices for a specific field in a Gravity Form.
+     *
+     * Normalises each choice into ['name' => string, 'slug' => string],
+     * where slug is computed via sanitize_title() — the same function WP uses
+     * internally in wp_insert_term(), ensuring reliable matching with taxonomy terms.
+     *
+     * Returns an empty array when GF is not active, the form doesn't exist,
+     * the field is not found, or the field has no choices.
+     *
+     * @param int $form_id   Gravity Forms form ID.
+     * @param int $field_id  The numeric ID of the field whose choices to fetch.
+     * @return array<int, array{name: string, slug: string}>
+     */
+    public function getFieldChoices(int $form_id, int $field_id): array
+    {
+        if (!class_exists('GFAPI')) {
+            return [];
+        }
+
+        $form = GFAPI::get_form($form_id);
+        if (!$form || empty($form['fields'])) {
+            return [];
+        }
+
+        foreach ($form['fields'] as $field) {
+            if ((int) $field->id !== $field_id) {
+                continue;
+            }
+
+            if (empty($field->choices) || !is_array($field->choices)) {
+                return [];
+            }
+
+            $result = [];
+            foreach ($field->choices as $choice) {
+                $name = trim((string) ($choice['text'] ?? $choice['value'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+                $result[] = [
+                    'name' => $name,
+                    'slug' => sanitize_title($name),
+                ];
+            }
+
+            return $result;
+        }
+
+        return [];
+    }
+
+    /**
      * Extracts grid layout data from a GF field.
      *
      * GF stores layout in a 12-column grid system.

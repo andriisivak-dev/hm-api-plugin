@@ -44,7 +44,7 @@ return [
     ],
     [
         'field_id' => 229,
-        'gf_type' => 'text',
+        'gf_type' => 'select',
         'label' => 'Tool Brand',
         'storage' => ['taxonomy' => 'hm_tool_brand', 'meta_key' => null],
         'display' => ['in_list' => true, 'in_card' => true, 'in_filters' => true],
