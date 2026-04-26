@@ -699,6 +699,14 @@ Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; 
 **Filters response `data`:**
 ```json
 {
+  "statuses": [
+    { "id": "draft",    "name": "Draft" },
+    { "id": "in_review", "name": "Submitted" },
+    { "id": "returned", "name": "Returned" },
+    { "id": "approved", "name": "Approved" },
+    { "id": "rejected", "name": "Rejected" },
+    { "id": "library",  "name": "Case Library" }
+  ],
   "product_types": [{ "term_id": 3, "name": "Cutting Tools", "slug": "cutting-tools", "count": 12 }],
   "industry_segments": [{ "term_id": 7, "name": "Medical", "slug": "medical", "count": 4 }],
   "machine_types": [],
@@ -708,6 +716,10 @@ Stats are scoped by the same role logic as `GET /cases` (admin/marketing = all; 
   "submitted_by": []
 }
 ```
+
+> **`approved` vs `library` status distinction:**
+> - `approved` — a **WP post status**. Filters cases by `post_status = 'approved'`. Available on the `Supervisor` and `Field Agent` dashboards as a standalone tab and in the sidebar filter.
+> - `library` — a **virtual/UI-only status**. Routes the request to the `/case-library` endpoint which queries posts with `post_status IN ('approved', 'complete')` and applies the full Case Library filter set (machine type, tool brand, customer name, etc.). Available on all dashboards. The sidebar filter hides the `approved` option for **Super Admin** (who only has a `library` tab, not an `approved` tab).
 
 **Hierarchy response `data`** (`GET /dashboard/hierarchy`):
 

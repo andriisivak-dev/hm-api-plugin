@@ -180,7 +180,8 @@ class DashboardController
                 ['id' => 'in_review', 'name' => __('Submitted', 'csp')],
                 ['id' => 'returned', 'name' => __('Returned', 'csp')],
                 ['id' => 'approved', 'name' => __('Approved', 'csp')],
-                ['id' => 'rejected', 'name' => __('Rejected', 'csp')]
+                ['id' => 'rejected', 'name' => __('Rejected', 'csp')],
+                ['id' => 'library', 'name' => __('Case Library', 'csp')]
             ],
             'product_types' => [],
             'industry_segments' => [],
