@@ -4,11 +4,20 @@ declare(strict_types=1);
 
 namespace CSP\Admin\Brevo;
 
+use CSP\Brevo\BrevoSettings;
+
 class BrevoAdminPage
 {
     private const MENU_SLUG = 'csp-brevo-settings';
     private const OPTION_GROUP = 'csp_brevo_settings_group';
     private const OPTION_NAME = 'csp_brevo_settings';
+
+    private BrevoSettings $settings;
+
+    public function __construct(?BrevoSettings $settings = null)
+    {
+        $this->settings = $settings ?? new BrevoSettings();
+    }
 
     public function register(): void
     {
@@ -113,7 +122,7 @@ class BrevoAdminPage
             $key,
             __($label, 'hm-case-study-api'),
             function () use ($key): void {
-                $value = (string) $this->getOptionValue($key);
+                $value = (string) $this->getResolvedSettingValue($key);
                 printf(
                     '<input type="text" class="regular-text" name="%1$s[%2$s]" value="%3$s" />',
                     esc_attr(self::OPTION_NAME),
@@ -132,7 +141,7 @@ class BrevoAdminPage
             $key,
             __($label, 'hm-case-study-api'),
             function () use ($key, $min, $max): void {
-                $value = (int) $this->getOptionValue($key);
+                $value = (int) $this->getResolvedSettingValue($key);
                 printf(
                     '<input type="number" class="small-text" name="%1$s[%2$s]" value="%3$d" %4$s %5$s step="1" />',
                     esc_attr(self::OPTION_NAME),
@@ -153,7 +162,7 @@ class BrevoAdminPage
             $key,
             __($label, 'hm-case-study-api'),
             function () use ($key): void {
-                $checked = (int) $this->getOptionValue($key) === 1;
+                $checked = (bool) $this->getResolvedSettingValue($key);
                 printf(
                     '<label><input type="checkbox" name="%1$s[%2$s]" value="1" %3$s /> %4$s</label>',
                     esc_attr(self::OPTION_NAME),
@@ -167,16 +176,39 @@ class BrevoAdminPage
         );
     }
 
-    private function getOptionValue(string $key)
+    private function getResolvedSettingValue(string $key)
     {
-        $options = get_option(self::OPTION_NAME, []);
-        $defaults = $this->getDefaults();
-
-        if (!is_array($options)) {
-            $options = [];
+        switch ($key) {
+            case 'brevo_api_base_url':
+                return $this->settings->get_api_base_url();
+            case 'brevo_customers_list_id':
+                return $this->settings->get_customers_list_id();
+            case 'brevo_deleted_customers_list_id':
+                return $this->settings->get_deleted_customers_list_id();
+            case 'brevo_sync_enabled':
+                return $this->settings->is_sync_enabled();
+            case 'brevo_soft_delete_enabled':
+                return $this->settings->is_soft_delete_enabled();
+            case 'brevo_use_phone_field':
+                return $this->settings->use_phone_field();
+            case 'brevo_use_sms_field':
+                return $this->settings->use_sms_field();
+            case 'brevo_timeout':
+                return $this->settings->get_timeout();
+            case 'brevo_max_retries':
+                return $this->settings->get_max_retries();
+            case 'brevo_debug_logging':
+                return $this->settings->is_debug_logging_enabled();
+            case 'brevo_bulk_sync_enabled':
+                return $this->settings->is_bulk_sync_enabled();
+            case 'brevo_bulk_sync_batch_size':
+                return $this->settings->get_bulk_sync_batch_size();
+            case 'brevo_bulk_sync_lock_ttl':
+                return $this->settings->get_bulk_sync_lock_ttl();
         }
 
-        return $options[$key] ?? $defaults[$key] ?? null;
+        $defaults = $this->getDefaults();
+        return $defaults[$key] ?? null;
     }
 
     private function getDefaults(): array
@@ -205,11 +237,6 @@ class BrevoAdminPage
 
     private function isApiKeyConfigured(): bool
     {
-        if (!defined('MTG_BREVO_API_KEY')) {
-            return false;
-        }
-
-        $value = constant('MTG_BREVO_API_KEY');
-        return is_string($value) && trim($value) !== '';
+        return $this->settings->get_api_key() !== '';
     }
 }
