@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CSP\Admin\Brevo;
 
+use CSP\Brevo\BrevoSyncDashboardService;
 use CSP\Brevo\BrevoSettings;
 
 class BrevoAdminPage
@@ -13,10 +14,15 @@ class BrevoAdminPage
     private const OPTION_NAME = 'csp_brevo_settings';
 
     private BrevoSettings $settings;
+    private BrevoSyncDashboardService $dashboard_service;
 
-    public function __construct(?BrevoSettings $settings = null)
+    public function __construct(
+        ?BrevoSettings $settings = null,
+        ?BrevoSyncDashboardService $dashboard_service = null
+    )
     {
         $this->settings = $settings ?? new BrevoSettings();
+        $this->dashboard_service = $dashboard_service ?? new BrevoSyncDashboardService();
     }
 
     public function register(): void
@@ -106,6 +112,7 @@ class BrevoAdminPage
                 <strong><?php esc_html_e('API key configured:', 'hm-case-study-api'); ?></strong>
                 <?php echo $this->isApiKeyConfigured() ? esc_html__('Yes', 'hm-case-study-api') : esc_html__('No', 'hm-case-study-api'); ?>
             </p>
+            <?php $this->renderSyncDashboardSummary(); ?>
             <form method="post" action="options.php">
                 <?php
                 settings_fields(self::OPTION_GROUP);
@@ -354,6 +361,38 @@ class BrevoAdminPage
         }
         ?>
         <div class="<?php echo esc_attr($class); ?>"><p><?php echo esc_html($message); ?></p></div>
+        <?php
+    }
+
+    private function renderSyncDashboardSummary(): void
+    {
+        $summary = $this->dashboard_service->get_summary();
+        ?>
+        <hr />
+        <h2><?php esc_html_e('Local Sync Status Summary', 'hm-case-study-api'); ?></h2>
+        <p>
+            <?php esc_html_e('These counters are based only on local WordPress sync metadata.', 'hm-case-study-api'); ?>
+        </p>
+        <table class="widefat striped" style="max-width: 720px;">
+            <tbody>
+                <?php $this->renderSummaryRow(__('Total Customers', 'hm-case-study-api'), (int) ($summary['total_customers'] ?? 0)); ?>
+                <?php $this->renderSummaryRow(__('Successfully synced', 'hm-case-study-api'), (int) ($summary['synced_success'] ?? 0)); ?>
+                <?php $this->renderSummaryRow(__('Failed', 'hm-case-study-api'), (int) ($summary['synced_failed'] ?? 0)); ?>
+                <?php $this->renderSummaryRow(__('Pending / scheduled', 'hm-case-study-api'), (int) ($summary['pending_or_scheduled'] ?? 0)); ?>
+                <?php $this->renderSummaryRow(__('Never synced', 'hm-case-study-api'), (int) ($summary['never_synced'] ?? 0)); ?>
+                <?php $this->renderSummaryRow(__('Deleted / soft-deleted (if tracked)', 'hm-case-study-api'), (int) ($summary['soft_deleted'] ?? 0)); ?>
+            </tbody>
+        </table>
+        <?php
+    }
+
+    private function renderSummaryRow(string $label, int $count): void
+    {
+        ?>
+        <tr>
+            <th scope="row"><?php echo esc_html($label); ?></th>
+            <td><strong><?php echo esc_html(number_format_i18n(max(0, $count))); ?></strong></td>
+        </tr>
         <?php
     }
 }
