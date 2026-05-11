@@ -50,7 +50,17 @@ class CustomerListTable extends \WP_List_Table
             'csp_delete_customer_' . $item->id
         );
 
+        $brevoSyncUrl = add_query_arg([
+            'page' => 'csp-customers',
+            'customer_brevo_sync' => (int) $item->id,
+        ], admin_url('admin.php'));
+
         $actions = [
+            'brevo_sync' => sprintf(
+                '<a href="%s">%s</a>',
+                esc_url($brevoSyncUrl),
+                __('Brevo Sync', 'hm-case-study-api')
+            ),
             'delete' => sprintf(
                 '<a href="%s" style="color:red;">%s</a>',
                 esc_url($deleteUrl),

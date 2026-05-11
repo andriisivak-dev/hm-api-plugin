@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace CSP\Admin\Customers;
 
+use CSP\Brevo\CustomerBrevoSyncMetaRepository;
+use CSP\Brevo\CustomerSyncService;
+use CSP\Brevo\SyncQueueFactory;
 use CSP\Repositories\CustomerRepository;
 
 /**
@@ -81,6 +84,18 @@ class CustomerAdminUI
             return;
         }
 
+        if (
+            isset($_POST['action'])
+            && $_POST['action'] === 'csp-brevo-sync-customer'
+            && isset($_POST['customer_id'])
+            && isset($_POST['page'])
+            && $_POST['page'] === 'csp-customers'
+        ) {
+            $customerId = (int) $_POST['customer_id'];
+            check_admin_referer('csp_brevo_sync_customer_' . $customerId);
+            $this->handleManualBrevoSyncAction($customerId);
+        }
+
         // Single delete
         if (
             isset($_GET['action'], $_GET['id'])
@@ -154,6 +169,16 @@ class CustomerAdminUI
 
     public function renderListPage(): void
     {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        $syncCustomerId = isset($_GET['customer_brevo_sync']) ? (int) $_GET['customer_brevo_sync'] : 0;
+        if ($syncCustomerId > 0) {
+            $this->renderBrevoSyncPage($syncCustomerId);
+            return;
+        }
+
         $table = new CustomerListTable();
         $table->prepare_items();
         ?>
@@ -167,6 +192,133 @@ class CustomerAdminUI
                 ?>
             </form>
         </div>
+        <?php
+    }
+
+    private function handleManualBrevoSyncAction(int $customerId): void
+    {
+        $customer = CustomerRepository::getById($customerId);
+        if (!$customer) {
+            $this->redirectToBrevoSyncPage($customerId, 'not_found');
+        }
+
+        $job = [
+            'customer_id' => $customerId,
+            'action' => CustomerSyncService::ACTION_UPSERT,
+            'source' => 'admin_manual',
+        ];
+
+        $queue = SyncQueueFactory::create();
+
+        if ($queue->is_job_queued($job) || $queue->enqueue($job)) {
+            $this->redirectToBrevoSyncPage($customerId, 'scheduled');
+        }
+
+        $result = (new CustomerSyncService())->sync_upsert($customerId, 'admin_manual');
+        if (!empty($result['success'])) {
+            $this->redirectToBrevoSyncPage($customerId, 'completed');
+        }
+
+        $this->redirectToBrevoSyncPage($customerId, 'failed');
+    }
+
+    private function redirectToBrevoSyncPage(int $customerId, string $notice): void
+    {
+        $url = add_query_arg([
+            'page' => 'csp-customers',
+            'customer_brevo_sync' => $customerId,
+            'brevo_sync_notice' => sanitize_key($notice),
+        ], admin_url('admin.php'));
+
+        wp_safe_redirect($url);
+        exit;
+    }
+
+    private function renderBrevoSyncPage(int $customerId): void
+    {
+        $customer = CustomerRepository::getById($customerId);
+        $backUrl = add_query_arg(['page' => 'csp-customers'], admin_url('admin.php'));
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Brevo Sync Status', 'hm-case-study-api'); ?></h1>
+            <?php $this->renderBrevoSyncNotice(); ?>
+            <p><a href="<?php echo esc_url($backUrl); ?>">&larr; <?php esc_html_e('Back to Customers', 'hm-case-study-api'); ?></a></p>
+            <?php if (!$customer): ?>
+                <div class="notice notice-error"><p><?php esc_html_e('Customer not found.', 'hm-case-study-api'); ?></p></div>
+            </div>
+                <?php return; ?>
+            <?php endif; ?>
+
+            <?php
+            $syncMeta = (new CustomerBrevoSyncMetaRepository())->get_all_meta($customerId);
+            $status = (string) ($syncMeta[CustomerBrevoSyncMetaRepository::META_SYNC_STATUS] ?? '');
+            $lastAttempt = (string) ($syncMeta[CustomerBrevoSyncMetaRepository::META_LAST_ATTEMPT_AT] ?? '');
+            $lastSuccess = (string) ($syncMeta[CustomerBrevoSyncMetaRepository::META_LAST_SUCCESS_AT] ?? '');
+            $lastError = (string) ($syncMeta[CustomerBrevoSyncMetaRepository::META_LAST_ERROR] ?? '');
+            $contactId = (string) ($syncMeta[CustomerBrevoSyncMetaRepository::META_CONTACT_ID] ?? '');
+            ?>
+
+            <table class="form-table" role="presentation">
+                <tbody>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Customer', 'hm-case-study-api'); ?></th>
+                        <td><?php echo esc_html((string) ($customer->company_name ?? '')); ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Last Sync Status', 'hm-case-study-api'); ?></th>
+                        <td><?php echo esc_html($status !== '' ? $status : '-'); ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Last Attempt Date', 'hm-case-study-api'); ?></th>
+                        <td><?php echo esc_html($lastAttempt !== '' ? $lastAttempt : '-'); ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Last Success Date', 'hm-case-study-api'); ?></th>
+                        <td><?php echo esc_html($lastSuccess !== '' ? $lastSuccess : '-'); ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Last Safe Error', 'hm-case-study-api'); ?></th>
+                        <td><?php echo esc_html($lastError !== '' ? $lastError : '-'); ?></td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php esc_html_e('Brevo Contact ID', 'hm-case-study-api'); ?></th>
+                        <td><?php echo esc_html($contactId !== '' ? $contactId : '-'); ?></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <form method="post">
+                <input type="hidden" name="page" value="csp-customers" />
+                <input type="hidden" name="action" value="csp-brevo-sync-customer" />
+                <input type="hidden" name="customer_id" value="<?php echo esc_attr((string) $customerId); ?>" />
+                <?php wp_nonce_field('csp_brevo_sync_customer_' . $customerId); ?>
+                <?php submit_button(__('Sync this Customer with Brevo', 'hm-case-study-api')); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    private function renderBrevoSyncNotice(): void
+    {
+        $notice = isset($_GET['brevo_sync_notice']) ? sanitize_key((string) $_GET['brevo_sync_notice']) : '';
+        if ($notice === '') {
+            return;
+        }
+
+        $map = [
+            'scheduled' => ['class' => 'notice notice-success', 'text' => __('Customer sync was scheduled.', 'hm-case-study-api')],
+            'completed' => ['class' => 'notice notice-success', 'text' => __('Customer sync completed.', 'hm-case-study-api')],
+            'failed' => ['class' => 'notice notice-error', 'text' => __('Customer sync failed. Check logs for details.', 'hm-case-study-api')],
+            'not_found' => ['class' => 'notice notice-error', 'text' => __('Customer not found.', 'hm-case-study-api')],
+        ];
+
+        if (!isset($map[$notice])) {
+            return;
+        }
+
+        $item = $map[$notice];
+        ?>
+        <div class="<?php echo esc_attr((string) $item['class']); ?>"><p><?php echo esc_html((string) $item['text']); ?></p></div>
         <?php
     }
 }
