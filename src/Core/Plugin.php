@@ -195,6 +195,7 @@ class Plugin
         // Admin UI (menu pages, list table, CSV importer)
         if (is_admin()) {
             (new \CSP\Admin\Customers\CustomerAdminUI())->register();
+            (new \CSP\Admin\Brevo\BrevoBulkSyncController(new \CSP\Brevo\BrevoBulkSyncService($sync_queue)))->register();
             (new \CSP\Admin\Brevo\BrevoAdminPage())->register();
             (new \CSP\Brevo\CustomerSyncHooks($sync_queue))->register();
         }

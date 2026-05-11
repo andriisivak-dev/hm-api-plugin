@@ -101,6 +101,7 @@ class BrevoAdminPage
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Brevo Settings', 'hm-case-study-api'); ?></h1>
+            <?php $this->renderBulkSyncNotice(); ?>
             <p>
                 <strong><?php esc_html_e('API key configured:', 'hm-case-study-api'); ?></strong>
                 <?php echo $this->isApiKeyConfigured() ? esc_html__('Yes', 'hm-case-study-api') : esc_html__('No', 'hm-case-study-api'); ?>
@@ -112,6 +113,7 @@ class BrevoAdminPage
                 submit_button();
                 ?>
             </form>
+            <?php $this->renderBulkSyncActions(); ?>
         </div>
         <?php
     }
@@ -238,5 +240,120 @@ class BrevoAdminPage
     private function isApiKeyConfigured(): bool
     {
         return $this->settings->get_api_key() !== '';
+    }
+
+    private function renderBulkSyncActions(): void
+    {
+        $is_enabled = $this->settings->is_bulk_sync_enabled();
+        $confirm_message = __('Are you sure you want to schedule Brevo sync for all Customers?', 'hm-case-study-api');
+        ?>
+        <hr />
+        <h2><?php esc_html_e('Bulk Sync Actions', 'hm-case-study-api'); ?></h2>
+        <p>
+            <?php esc_html_e('This will schedule synchronization for all Customers. Existing Brevo contacts with the same email may be updated. The operation will run in the background.', 'hm-case-study-api'); ?>
+        </p>
+
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
+            <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_SYNC_ALL); ?>" />
+            <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
+            <?php
+            $attributes = [
+                'onclick' => "return confirm('" . esc_js($confirm_message) . "');",
+            ];
+
+            if (!$is_enabled) {
+                $attributes['disabled'] = 'disabled';
+            }
+
+            submit_button(
+                __('Sync all Customers', 'hm-case-study-api'),
+                'secondary',
+                'submit',
+                false,
+                $attributes
+            );
+            ?>
+        </form>
+
+        <?php if (!$is_enabled): ?>
+            <p>
+                <em><?php esc_html_e('Bulk sync is disabled. Enable "Bulk Sync Enabled" in settings to use this action.', 'hm-case-study-api'); ?></em>
+            </p>
+        <?php endif; ?>
+        <?php
+    }
+
+    private function renderBulkSyncNotice(): void
+    {
+        $notice = isset($_GET[BrevoBulkSyncController::QUERY_NOTICE])
+            ? sanitize_key((string) wp_unslash($_GET[BrevoBulkSyncController::QUERY_NOTICE]))
+            : '';
+
+        if ($notice === '') {
+            return;
+        }
+
+        $count = isset($_GET[BrevoBulkSyncController::QUERY_COUNT])
+            ? max(0, (int) wp_unslash($_GET[BrevoBulkSyncController::QUERY_COUNT]))
+            : 0;
+
+        $skipped = isset($_GET[BrevoBulkSyncController::QUERY_SKIPPED])
+            ? max(0, (int) wp_unslash($_GET[BrevoBulkSyncController::QUERY_SKIPPED]))
+            : 0;
+
+        $failed = isset($_GET[BrevoBulkSyncController::QUERY_FAILED])
+            ? max(0, (int) wp_unslash($_GET[BrevoBulkSyncController::QUERY_FAILED]))
+            : 0;
+
+        $class = 'notice notice-info';
+        $message = '';
+
+        switch ($notice) {
+            case 'scheduled':
+                $class = $failed > 0 ? 'notice notice-warning' : 'notice notice-success';
+                $message = sprintf(
+                    __('Brevo sync scheduled for %d Customers.', 'hm-case-study-api'),
+                    $count
+                );
+
+                if ($skipped > 0) {
+                    $message .= ' ' . sprintf(
+                        __('Skipped invalid records: %d.', 'hm-case-study-api'),
+                        $skipped
+                    );
+                }
+
+                if ($failed > 0) {
+                    $message .= ' ' . sprintf(
+                        __('Failed to queue: %d. Check logs for details.', 'hm-case-study-api'),
+                        $failed
+                    );
+                }
+                break;
+            case 'locked':
+                $class = 'notice notice-warning';
+                $message = __('Bulk sync is already being scheduled. Please wait and try again.', 'hm-case-study-api');
+                break;
+            case 'disabled':
+                $class = 'notice notice-warning';
+                $message = __('Bulk sync is disabled in settings.', 'hm-case-study-api');
+                break;
+            case 'invalid_action':
+                $class = 'notice notice-error';
+                $message = __('Invalid bulk sync action.', 'hm-case-study-api');
+                break;
+            case 'failed':
+                $class = 'notice notice-error';
+                $message = __('Failed to schedule Brevo bulk sync. Check logs for details.', 'hm-case-study-api');
+                break;
+        }
+
+        if ($message === '') {
+            return;
+        }
+        ?>
+        <div class="<?php echo esc_attr($class); ?>"><p><?php echo esc_html($message); ?></p></div>
+        <?php
     }
 }
