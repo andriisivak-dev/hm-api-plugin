@@ -16,7 +16,7 @@ namespace CSP\Database;
 class CustomerMigrations
 {
     private const DB_VERSION_OPTION = 'csp_clients_db_version';
-    private const DB_VERSION        = '5';
+    private const DB_VERSION        = '6';
 
     /**
      * Run on plugin activation.
@@ -70,10 +70,18 @@ class CustomerMigrations
             customer_segment VARCHAR(100) NULL,
             billing_center VARCHAR(100) NULL,
             logo_id BIGINT UNSIGNED NULL,
+            brevo_sync_status VARCHAR(30) NULL,
+            brevo_sync_last_attempt_at DATETIME NULL,
+            brevo_sync_last_success_at DATETIME NULL,
+            brevo_sync_last_error VARCHAR(255) NULL,
+            brevo_contact_id VARCHAR(100) NULL,
+            brevo_sync_last_payload_hash CHAR(64) NULL,
             updated_at DATETIME NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY uniq_company (company_name),
-            KEY email (email)
+            KEY email (email),
+            KEY brevo_sync_status (brevo_sync_status),
+            KEY brevo_contact_id (brevo_contact_id)
         ) {$charsetCollate};";
 
         dbDelta($sql);
