@@ -13,6 +13,7 @@ class CustomerSyncService
 
     private BrevoSettings $settings;
     private CustomerBrevoMapper $mapper;
+    private CustomerChangeDetector $change_detector;
     private BrevoContactService $contact_service;
     private CustomerBrevoSyncMetaRepository $sync_meta_repository;
     private BrevoLogger $logger;
@@ -20,14 +21,16 @@ class CustomerSyncService
     public function __construct(
         ?BrevoSettings $settings = null,
         ?CustomerBrevoMapper $mapper = null,
+        ?CustomerChangeDetector $change_detector = null,
         ?BrevoContactService $contact_service = null,
         ?CustomerBrevoSyncMetaRepository $sync_meta_repository = null,
         ?BrevoLogger $logger = null
     ) {
         $this->settings = $settings ?? new BrevoSettings();
-        $this->mapper = $mapper ?? new CustomerBrevoMapper($this->settings);
-        $this->contact_service = $contact_service ?? new BrevoContactService();
         $this->sync_meta_repository = $sync_meta_repository ?? new CustomerBrevoSyncMetaRepository();
+        $this->mapper = $mapper ?? new CustomerBrevoMapper($this->settings);
+        $this->change_detector = $change_detector ?? new CustomerChangeDetector($this->sync_meta_repository);
+        $this->contact_service = $contact_service ?? new BrevoContactService();
         $this->logger = $logger ?? new BrevoLogger($this->settings);
     }
 
@@ -108,14 +111,14 @@ class CustomerSyncService
             return $this->result(false, $safe_error, $action);
         }
 
-        $payload_hash = $this->make_payload_hash($payload);
-        $this->sync_meta_repository->mark_sync_attempt($customer_id, $payload_hash);
+        $fingerprint = $this->change_detector->build_sync_fingerprint($customer);
+        $this->sync_meta_repository->mark_sync_attempt($customer_id, $fingerprint);
 
         try {
             $response = $this->dispatch_sync_action($action, $payload);
             $contact_id = $this->extract_contact_id($response);
 
-            $this->sync_meta_repository->mark_sync_success($customer_id, $contact_id, $payload_hash);
+            $this->sync_meta_repository->mark_sync_success($customer_id, $contact_id, $fingerprint);
 
             $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
             $this->logger->info('brevo_sync_completed', [
@@ -137,7 +140,7 @@ class CustomerSyncService
             ]);
         } catch (\Throwable $exception) {
             $safe_error = $this->build_safe_error_message($exception);
-            $this->sync_meta_repository->mark_sync_failure($customer_id, $safe_error, $payload_hash);
+            $this->sync_meta_repository->mark_sync_failure($customer_id, $safe_error, $fingerprint);
 
             $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
             $this->logger->error('brevo_sync_failed', [
@@ -223,19 +226,6 @@ class CustomerSyncService
 
         $contact_id = trim((string) $body['id']);
         return $contact_id !== '' ? $contact_id : null;
-    }
-
-    /**
-     * @param array<string,mixed> $payload
-     */
-    private function make_payload_hash(array $payload): string
-    {
-        $encoded = wp_json_encode($payload);
-        if (!is_string($encoded) || $encoded === '') {
-            return '';
-        }
-
-        return hash('sha256', $encoded);
     }
 
     private function normalize_action(string $action): string
