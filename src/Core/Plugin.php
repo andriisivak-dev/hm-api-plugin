@@ -192,6 +192,7 @@ class Plugin
         // Admin UI (menu pages, list table, CSV importer)
         if (is_admin()) {
             (new \CSP\Admin\Customers\CustomerAdminUI())->register();
+            (new \CSP\Admin\Brevo\BrevoAdminPage())->register();
         }
 
         // Gravity Forms integration (autocomplete, validation, location pre-fill)
