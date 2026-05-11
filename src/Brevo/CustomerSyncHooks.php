@@ -11,7 +11,7 @@ class CustomerSyncHooks
     /** @var string[] */
     private const ADMIN_SOURCES = ['admin', 'admin_bulk', 'admin_import'];
 
-    private CustomerSyncService $sync_service;
+    private SyncQueueInterface $sync_queue;
     private CustomerChangeDetector $change_detector;
     private BrevoLogger $logger;
 
@@ -19,11 +19,11 @@ class CustomerSyncHooks
     private array $in_progress = [];
 
     public function __construct(
-        ?CustomerSyncService $sync_service = null,
+        ?SyncQueueInterface $sync_queue = null,
         ?CustomerChangeDetector $change_detector = null,
         ?BrevoLogger $logger = null
     ) {
-        $this->sync_service = $sync_service ?? new CustomerSyncService();
+        $this->sync_queue = $sync_queue ?? SyncQueueFactory::create();
         $this->change_detector = $change_detector ?? new CustomerChangeDetector();
         $this->logger = $logger ?? new BrevoLogger();
     }
@@ -70,12 +70,16 @@ class CustomerSyncHooks
                 return;
             }
 
-            $result = $this->sync_service->sync_upsert($customer_id, $source);
-            if (!($result['success'] ?? false)) {
-                $this->logger->warning('brevo_admin_sync_upsert_failed', [
+            $queued = $this->sync_queue->enqueue([
+                'customer_id' => $customer_id,
+                'action' => CustomerSyncService::ACTION_UPSERT,
+                'source' => $source,
+            ]);
+
+            if (!$queued) {
+                $this->logger->debug('brevo_admin_sync_upsert_not_queued', [
                     'customer_id' => $customer_id,
                     'source' => $source,
-                    'error' => (string) ($result['error'] ?? ''),
                 ]);
             }
         } catch (\Throwable $exception) {
@@ -106,12 +110,16 @@ class CustomerSyncHooks
         }
 
         try {
-            $result = $this->sync_service->sync_soft_delete($customer_id, $source);
-            if (!($result['success'] ?? false)) {
-                $this->logger->warning('brevo_admin_sync_soft_delete_failed', [
+            $queued = $this->sync_queue->enqueue([
+                'customer_id' => $customer_id,
+                'action' => CustomerSyncService::ACTION_SOFT_DELETE,
+                'source' => $source,
+            ]);
+
+            if (!$queued) {
+                $this->logger->debug('brevo_admin_sync_soft_delete_not_queued', [
                     'customer_id' => $customer_id,
                     'source' => $source,
-                    'error' => (string) ($result['error'] ?? ''),
                 ]);
             }
         } catch (\Throwable $exception) {

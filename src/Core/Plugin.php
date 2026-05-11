@@ -189,11 +189,14 @@ class Plugin
         // Customer DB schema auto-upgrade on every boot (non-destructive)
         (new \CSP\Database\CustomerMigrations())->maybeUpgrade();
 
+        $sync_queue = \CSP\Brevo\SyncQueueFactory::create();
+        $sync_queue->register();
+
         // Admin UI (menu pages, list table, CSV importer)
         if (is_admin()) {
             (new \CSP\Admin\Customers\CustomerAdminUI())->register();
             (new \CSP\Admin\Brevo\BrevoAdminPage())->register();
-            (new \CSP\Brevo\CustomerSyncHooks())->register();
+            (new \CSP\Brevo\CustomerSyncHooks($sync_queue))->register();
         }
 
         // Gravity Forms integration (autocomplete, validation, location pre-fill)
