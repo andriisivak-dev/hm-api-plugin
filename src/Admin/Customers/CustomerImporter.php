@@ -96,7 +96,7 @@ class CustomerImporter
             if ('' === $data['company_name']) {
                 $stats['skipped']++;
             } else {
-                CustomerRepository::upsert($data, $stats);
+                CustomerRepository::upsert($data, $stats, 'admin_import');
             }
 
             $current++;

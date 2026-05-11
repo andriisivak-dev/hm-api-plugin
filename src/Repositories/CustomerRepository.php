@@ -183,7 +183,7 @@ class CustomerRepository
      * @param array<string,mixed> $data
      * @param array{inserted:int,updated:int,skipped:int} $stats  passed by reference
      */
-    public static function upsert(array $data, array &$stats): bool
+    public static function upsert(array $data, array &$stats, string $source = 'system'): bool
     {
         global $wpdb;
 
@@ -212,7 +212,7 @@ class CustomerRepository
         $existing = self::getByExternalId($externalId);
 
         if ($existing) {
-            $wpdb->update(
+            $updated = $wpdb->update(
                 $table,
                 [
                     'company_name'     => $companyName,
@@ -229,7 +229,17 @@ class CustomerRepository
                 ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s'],
                 ['%d']
             );
+
+            if ($updated === false) {
+                $stats['skipped']++;
+                return false;
+            }
+
             $stats['updated']++;
+
+            $current = self::getById((int) $existing->id) ?: $existing;
+            do_action('csp_customer_saved', (int) $existing->id, sanitize_key($source), false, $existing, $current);
+
             return true;
         }
 
@@ -255,6 +265,10 @@ class CustomerRepository
             return false;
         }
 
+        $new_id = (int) $wpdb->insert_id;
+        $current = self::getById($new_id);
+        do_action('csp_customer_saved', $new_id, sanitize_key($source), true, null, $current);
+
         $stats['inserted']++;
         return true;
     }
@@ -262,7 +276,7 @@ class CustomerRepository
     /**
      * @param int[] $ids
      */
-    public static function deleteByIds(array $ids): void
+    public static function deleteByIds(array $ids, string $source = 'system'): void
     {
         global $wpdb;
 
@@ -272,9 +286,44 @@ class CustomerRepository
         }
 
         $table = self::table();
+        $source = sanitize_key($source);
+
+        $rows = self::getByIds($ids);
+        foreach ($rows as $row) {
+            do_action('csp_customer_deleting', (int) $row->id, $source, $row);
+        }
+
         $wpdb->query("DELETE FROM {$table} WHERE id IN (" . implode(',', $ids) . ')');
 
+        foreach ($rows as $row) {
+            do_action('csp_customer_deleted', (int) $row->id, $source, $row);
+        }
+
         self::invalidateCache();
+    }
+
+    /**
+     * @param int[] $ids
+     * @return object[]
+     */
+    private static function getByIds(array $ids): array
+    {
+        global $wpdb;
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+        $sql = "SELECT * FROM " . self::table() . " WHERE id IN ({$placeholders})";
+        $prepared = $wpdb->prepare($sql, ...$ids);
+
+        return (array) $wpdb->get_results($prepared);
     }
 
     // -------------------------------------------------------------------------

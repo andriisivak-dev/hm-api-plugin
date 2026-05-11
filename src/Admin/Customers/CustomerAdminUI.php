@@ -90,7 +90,7 @@ class CustomerAdminUI
         ) {
             $id = (int) $_GET['id'];
             check_admin_referer('csp_delete_customer_' . $id);
-            CustomerRepository::deleteByIds([$id]);
+            CustomerRepository::deleteByIds([$id], 'admin');
             wp_redirect(remove_query_arg(['action', 'id', '_wpnonce']));
             exit;
         }
@@ -104,7 +104,7 @@ class CustomerAdminUI
         ) {
             $ids = array_map('intval', (array) ($_POST['customer_ids'] ?? []));
             if ($ids) {
-                CustomerRepository::deleteByIds($ids);
+                CustomerRepository::deleteByIds($ids, 'admin_bulk');
             }
         }
     }
