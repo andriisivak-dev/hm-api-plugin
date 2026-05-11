@@ -94,11 +94,78 @@ class CustomerSyncService
             ]);
         }
 
+        return $this->sync_with_customer_data($customer, $customer_id, $sync_source, $action, $started_at);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function sync_upsert(int $customer_id, string $sync_source = 'manual'): array
+    {
+        return $this->sync_customer($customer_id, $sync_source, self::ACTION_UPSERT);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function sync_soft_delete(int $customer_id, string $sync_source = 'manual'): array
+    {
+        return $this->sync_customer($customer_id, $sync_source, self::ACTION_SOFT_DELETE);
+    }
+
+    /**
+     * @param array<string,mixed>|object $customer
+     * @return array<string,mixed>
+     */
+    public function sync_customer_snapshot($customer, string $sync_source, string $action, int $customer_id = 0): array
+    {
+        $started_at = microtime(true);
+        $action = $this->normalize_action($action);
+        $sync_source = sanitize_key($sync_source);
+
+        if (!$this->settings->is_sync_enabled()) {
+            return $this->result(true, '', $action, [
+                'skipped' => true,
+                'reason' => 'sync_disabled',
+            ]);
+        }
+
+        if ($action === self::ACTION_SOFT_DELETE && !$this->settings->is_soft_delete_enabled()) {
+            return $this->result(true, '', $action, [
+                'skipped' => true,
+                'reason' => 'soft_delete_disabled',
+            ]);
+        }
+
+        return $this->sync_with_customer_data($customer, $customer_id, $sync_source, $action, $started_at);
+    }
+
+    /**
+     * @param array<string,mixed>|object $customer
+     * @return array<string,mixed>
+     */
+    private function build_payload($customer, string $action, string $sync_source): array
+    {
+        if ($action === self::ACTION_SOFT_DELETE) {
+            return $this->mapper->map_soft_delete_payload($customer, $sync_source);
+        }
+
+        return $this->mapper->map_upsert_payload($customer, $sync_source);
+    }
+
+    /**
+     * @param array<string,mixed>|object $customer
+     * @return array<string,mixed>
+     */
+    private function sync_with_customer_data($customer, int $customer_id, string $sync_source, string $action, float $started_at): array
+    {
         try {
             $payload = $this->build_payload($customer, $action, $sync_source);
         } catch (\Throwable $exception) {
             $safe_error = $this->build_safe_error_message($exception);
-            $this->sync_meta_repository->mark_sync_failure($customer_id, $safe_error);
+            if ($customer_id > 0) {
+                $this->sync_meta_repository->mark_sync_failure($customer_id, $safe_error);
+            }
 
             $this->logger->error('brevo_sync_mapper_failed', [
                 'customer_id' => $customer_id,
@@ -112,13 +179,17 @@ class CustomerSyncService
         }
 
         $fingerprint = $this->change_detector->build_sync_fingerprint($customer);
-        $this->sync_meta_repository->mark_sync_attempt($customer_id, $fingerprint);
+        if ($customer_id > 0) {
+            $this->sync_meta_repository->mark_sync_attempt($customer_id, $fingerprint);
+        }
 
         try {
             $response = $this->dispatch_sync_action($action, $payload);
             $contact_id = $this->extract_contact_id($response);
 
-            $this->sync_meta_repository->mark_sync_success($customer_id, $contact_id, $fingerprint);
+            if ($customer_id > 0) {
+                $this->sync_meta_repository->mark_sync_success($customer_id, $contact_id, $fingerprint);
+            }
 
             $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
             $this->logger->info('brevo_sync_completed', [
@@ -140,7 +211,9 @@ class CustomerSyncService
             ]);
         } catch (\Throwable $exception) {
             $safe_error = $this->build_safe_error_message($exception);
-            $this->sync_meta_repository->mark_sync_failure($customer_id, $safe_error, $fingerprint);
+            if ($customer_id > 0) {
+                $this->sync_meta_repository->mark_sync_failure($customer_id, $safe_error, $fingerprint);
+            }
 
             $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
             $this->logger->error('brevo_sync_failed', [
@@ -162,35 +235,6 @@ class CustomerSyncService
                 'retryable' => $exception instanceof BrevoApiException ? $exception->is_retryable() : false,
             ]);
         }
-    }
-
-    /**
-     * @return array<string,mixed>
-     */
-    public function sync_upsert(int $customer_id, string $sync_source = 'manual'): array
-    {
-        return $this->sync_customer($customer_id, $sync_source, self::ACTION_UPSERT);
-    }
-
-    /**
-     * @return array<string,mixed>
-     */
-    public function sync_soft_delete(int $customer_id, string $sync_source = 'manual'): array
-    {
-        return $this->sync_customer($customer_id, $sync_source, self::ACTION_SOFT_DELETE);
-    }
-
-    /**
-     * @param object $customer
-     * @return array<string,mixed>
-     */
-    private function build_payload(object $customer, string $action, string $sync_source): array
-    {
-        if ($action === self::ACTION_SOFT_DELETE) {
-            return $this->mapper->map_soft_delete_payload($customer, $sync_source);
-        }
-
-        return $this->mapper->map_upsert_payload($customer, $sync_source);
     }
 
     /**

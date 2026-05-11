@@ -145,12 +145,21 @@ class WpCronSyncQueue implements SyncQueueInterface
             $action = CustomerSyncService::ACTION_UPSERT;
         }
 
-        return [
+        $normalized = [
             'customer_id' => $customer_id,
             'action' => $action,
             'source' => sanitize_key((string) ($job['source'] ?? 'queue')),
             'retry_count' => max(0, (int) ($job['retry_count'] ?? 0)),
         ];
+
+        if ($action === CustomerSyncService::ACTION_SOFT_DELETE) {
+            $snapshot = $this->normalize_customer_snapshot($job['customer_snapshot'] ?? null);
+            if ($snapshot !== null) {
+                $normalized['customer_snapshot'] = $snapshot;
+            }
+        }
+
+        return $normalized;
     }
 
     /**
@@ -193,5 +202,33 @@ class WpCronSyncQueue implements SyncQueueInterface
     private function get_retry_delay_seconds(int $retry_count): int
     {
         return min(300, 30 * (2 ** max(0, $retry_count)));
+    }
+
+    /**
+     * @param mixed $snapshot
+     * @return array<string,mixed>|null
+     */
+    private function normalize_customer_snapshot($snapshot): ?array
+    {
+        if (is_object($snapshot)) {
+            $snapshot = get_object_vars($snapshot);
+        }
+
+        if (!is_array($snapshot)) {
+            return null;
+        }
+
+        return [
+            'id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+            'external_id' => isset($snapshot['external_id']) ? sanitize_text_field((string) $snapshot['external_id']) : '',
+            'company_name' => isset($snapshot['company_name']) ? sanitize_text_field((string) $snapshot['company_name']) : '',
+            'address' => isset($snapshot['address']) ? sanitize_textarea_field((string) $snapshot['address']) : '',
+            'city' => isset($snapshot['city']) ? sanitize_text_field((string) $snapshot['city']) : '',
+            'state' => isset($snapshot['state']) ? sanitize_text_field((string) $snapshot['state']) : '',
+            'phone' => isset($snapshot['phone']) ? sanitize_text_field((string) $snapshot['phone']) : '',
+            'email' => isset($snapshot['email']) ? sanitize_email((string) $snapshot['email']) : '',
+            'customer_segment' => isset($snapshot['customer_segment']) ? sanitize_text_field((string) $snapshot['customer_segment']) : '',
+            'billing_center' => isset($snapshot['billing_center']) ? sanitize_text_field((string) $snapshot['billing_center']) : '',
+        ];
     }
 }

@@ -29,6 +29,7 @@ class CustomerSyncJobHandler
         $customer_id = (int) ($job['customer_id'] ?? 0);
         $action = sanitize_key((string) ($job['action'] ?? CustomerSyncService::ACTION_UPSERT));
         $source = sanitize_key((string) ($job['source'] ?? 'queue'));
+        $customer_snapshot = $job['customer_snapshot'] ?? null;
 
         if ($customer_id <= 0) {
             return [
@@ -58,6 +59,10 @@ class CustomerSyncJobHandler
         set_transient($lock_key, 1, $lock_ttl);
 
         try {
+            if ($action === CustomerSyncService::ACTION_SOFT_DELETE && (is_array($customer_snapshot) || is_object($customer_snapshot))) {
+                return $this->sync_service->sync_customer_snapshot($customer_snapshot, $source, $action, $customer_id);
+            }
+
             return $this->sync_service->sync_customer($customer_id, $source, $action);
         } finally {
             delete_transient($lock_key);

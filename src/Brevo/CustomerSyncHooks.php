@@ -114,6 +114,7 @@ class CustomerSyncHooks
                 'customer_id' => $customer_id,
                 'action' => CustomerSyncService::ACTION_SOFT_DELETE,
                 'source' => $source,
+                'customer_snapshot' => is_object($customer) ? get_object_vars($customer) : [],
             ]);
 
             if (!$queued) {

@@ -7,6 +7,11 @@ namespace CSP\API\Controllers;
 use WP_REST_Request;
 use CSP\API\Responses\ApiResponse;
 use CSP\API\Responses\ErrorCodes;
+use CSP\Brevo\BrevoLogger;
+use CSP\Brevo\CustomerChangeDetector;
+use CSP\Brevo\CustomerSyncService;
+use CSP\Brevo\SyncQueueFactory;
+use CSP\Brevo\SyncQueueInterface;
 use CSP\Repositories\CustomerRepository;
 use CSP\Exceptions\ApiException;
 
@@ -29,6 +34,23 @@ use CSP\Exceptions\ApiException;
  */
 class CustomerController
 {
+    private SyncQueueInterface $sync_queue;
+    private CustomerChangeDetector $change_detector;
+    private CustomerSyncService $sync_service;
+    private BrevoLogger $logger;
+
+    public function __construct(
+        ?SyncQueueInterface $sync_queue = null,
+        ?CustomerChangeDetector $change_detector = null,
+        ?CustomerSyncService $sync_service = null,
+        ?BrevoLogger $logger = null
+    ) {
+        $this->sync_queue = $sync_queue ?? SyncQueueFactory::create();
+        $this->change_detector = $change_detector ?? new CustomerChangeDetector();
+        $this->sync_service = $sync_service ?? new CustomerSyncService();
+        $this->logger = $logger ?? new BrevoLogger();
+    }
+
     // -------------------------------------------------------------------------
     // Permission guard
     // -------------------------------------------------------------------------
@@ -154,6 +176,8 @@ class CustomerController
         if (!$customer) {
             return ApiResponse::error(ErrorCodes::INTERNAL_ERROR, 'Customer created but failed to load created record.', 500);
         }
+
+        $this->queueCustomerSync($customer, 'rest_create', CustomerSyncService::ACTION_UPSERT);
 
         return new \WP_REST_Response(
             ['success' => true, 'data' => $this->prepareItem($customer), 'message' => ''],
@@ -307,6 +331,10 @@ class CustomerController
             return ApiResponse::error(ErrorCodes::INTERNAL_ERROR, 'Customer updated but failed to load updated record.', 500);
         }
 
+        if ($this->change_detector->has_relevant_changes($id, $customer)) {
+            $this->queueCustomerSync($customer, 'rest_update', CustomerSyncService::ACTION_UPSERT);
+        }
+
         return ApiResponse::success($this->prepareItem($customer));
     }
 
@@ -325,9 +353,11 @@ class CustomerController
             return ApiResponse::error(ErrorCodes::NOT_FOUND, 'Customer not found.', 404);
         }
 
+        $this->queueCustomerSync($customer, 'rest_delete', CustomerSyncService::ACTION_SOFT_DELETE);
+
         $previous = $this->prepareItem($customer);
 
-        CustomerRepository::deleteByIds([$id]);
+        CustomerRepository::deleteByIds([$id], 'rest_delete');
 
         if (CustomerRepository::getById($id)) {
             return ApiResponse::error(ErrorCodes::INTERNAL_ERROR, 'Failed to delete customer.', 500);
@@ -517,6 +547,62 @@ class CustomerController
     private function sanitizeSearch(string $search): string
     {
         return sanitize_text_field(wp_unslash($search));
+    }
+
+    private function queueCustomerSync(object $customer, string $source, string $action): void
+    {
+        $source = sanitize_key($source);
+        $customerId = (int) ($customer->id ?? 0);
+
+        if ($customerId <= 0) {
+            return;
+        }
+
+        $job = [
+            'customer_id' => $customerId,
+            'action' => sanitize_key($action),
+            'source' => $source,
+        ];
+
+        if ($action === CustomerSyncService::ACTION_SOFT_DELETE) {
+            $job['customer_snapshot'] = get_object_vars($customer);
+        }
+
+        try {
+            if ($this->sync_queue->is_job_queued($job)) {
+                return;
+            }
+
+            if ($this->sync_queue->enqueue($job)) {
+                return;
+            }
+        } catch (\Throwable $exception) {
+            $this->logger->warning('brevo_rest_sync_enqueue_exception', [
+                'customer_id' => $customerId,
+                'source' => $source,
+                'action' => $action,
+                'error_type' => get_class($exception),
+                'error_message' => $exception->getMessage(),
+            ]);
+        }
+
+        $result = $action === CustomerSyncService::ACTION_SOFT_DELETE
+            ? $this->sync_service->sync_customer_snapshot(
+                get_object_vars($customer),
+                $source,
+                CustomerSyncService::ACTION_SOFT_DELETE,
+                $customerId
+            )
+            : $this->sync_service->sync_customer($customerId, $source, CustomerSyncService::ACTION_UPSERT);
+
+        if (!($result['success'] ?? false)) {
+            $this->logger->warning('brevo_rest_sync_fallback_failed', [
+                'customer_id' => $customerId,
+                'source' => $source,
+                'action' => $action,
+                'error' => (string) ($result['error'] ?? ''),
+            ]);
+        }
     }
 
     /**
