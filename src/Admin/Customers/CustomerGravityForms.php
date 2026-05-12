@@ -171,7 +171,7 @@ class CustomerGravityForms
     {
         global $wpdb;
 
-        $term = isset($_GET['term']) ? sanitize_text_field((string) $_GET['term']) : '';
+        $term = isset($_GET['term']) ? trim(sanitize_text_field((string) $_GET['term'])) : '';
         if (mb_strlen($term) < 2) {
             wp_send_json([]);
         }
@@ -185,7 +185,7 @@ class CustomerGravityForms
                  WHERE company_name LIKE %s
                  ORDER BY company_name ASC
                  LIMIT 20",
-                '%' . $wpdb->esc_like($term) . '%'
+                $wpdb->esc_like($term) . '%'
             ),
             ARRAY_A
         );
