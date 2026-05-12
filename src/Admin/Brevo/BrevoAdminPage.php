@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CSP\Admin\Brevo;
 
+use CSP\Brevo\BrevoBulkSyncService;
 use CSP\Brevo\BrevoSyncDashboardService;
 use CSP\Brevo\BrevoSettings;
 
@@ -15,14 +16,17 @@ class BrevoAdminPage
 
     private BrevoSettings $settings;
     private BrevoSyncDashboardService $dashboard_service;
+    private BrevoBulkSyncService $bulk_sync_service;
 
     public function __construct(
         ?BrevoSettings $settings = null,
-        ?BrevoSyncDashboardService $dashboard_service = null
+        ?BrevoSyncDashboardService $dashboard_service = null,
+        ?BrevoBulkSyncService $bulk_sync_service = null
     )
     {
         $this->settings = $settings ?? new BrevoSettings();
         $this->dashboard_service = $dashboard_service ?? new BrevoSyncDashboardService();
+        $this->bulk_sync_service = $bulk_sync_service ?? new BrevoBulkSyncService();
     }
 
     public function register(): void
@@ -104,9 +108,12 @@ class BrevoAdminPage
         if (!current_user_can('manage_options')) {
             return;
         }
+
+        $run_state = $this->bulk_sync_service->get_run_state();
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Brevo Settings', 'hm-case-study-api'); ?></h1>
+            <?php $this->renderBulkSyncAutoRefresh($run_state); ?>
             <?php $this->renderBulkSyncNotice(); ?>
             <p>
                 <strong><?php esc_html_e('API key configured:', 'hm-case-study-api'); ?></strong>
@@ -120,7 +127,7 @@ class BrevoAdminPage
                 submit_button();
                 ?>
             </form>
-            <?php $this->renderBulkSyncActions(); ?>
+            <?php $this->renderBulkSyncActions($run_state); ?>
         </div>
         <?php
     }
@@ -249,39 +256,78 @@ class BrevoAdminPage
         return $this->settings->get_api_key() !== '';
     }
 
-    private function renderBulkSyncActions(): void
+    /**
+     * @param array<string,mixed> $run_state
+     */
+    private function renderBulkSyncActions(array $run_state): void
     {
         $is_enabled = $this->settings->is_bulk_sync_enabled();
-        $confirm_message = __('Are you sure you want to schedule Brevo sync for all Customers?', 'hm-case-study-api');
+        $is_running = in_array((string) ($run_state['status'] ?? ''), ['running', 'stopping'], true);
+        $is_stopping = (string) ($run_state['status'] ?? '') === 'stopping';
+        $confirm_start = __('Are you sure you want to start Brevo sync for all Customers?', 'hm-case-study-api');
+        $confirm_stop = __('Stop the active Brevo bulk sync after current batch?', 'hm-case-study-api');
         ?>
         <hr />
         <h2><?php esc_html_e('Bulk Sync Actions', 'hm-case-study-api'); ?></h2>
         <p>
-            <?php esc_html_e('This will schedule synchronization for all Customers. Existing Brevo contacts with the same email may be updated. The operation will run in the background.', 'hm-case-study-api'); ?>
+            <?php esc_html_e('This will process all Customers in background batches. Existing Brevo contacts with the same email may be updated.', 'hm-case-study-api'); ?>
         </p>
 
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
-            <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_SYNC_ALL); ?>" />
-            <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
-            <?php
-            $attributes = [
-                'onclick' => "return confirm('" . esc_js($confirm_message) . "');",
-            ];
+        <?php $this->renderBulkSyncProgress($run_state); ?>
 
-            if (!$is_enabled) {
-                $attributes['disabled'] = 'disabled';
-            }
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
+                <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_SYNC_ALL); ?>" />
+                <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
+                <?php
+                $start_attributes = [
+                    'onclick' => "return confirm('" . esc_js($confirm_start) . "');",
+                ];
 
-            submit_button(
-                __('Sync all Customers', 'hm-case-study-api'),
-                'secondary',
-                'submit',
-                false,
-                $attributes
-            );
-            ?>
-        </form>
+                if (!$is_enabled || $is_running) {
+                    $start_attributes['disabled'] = 'disabled';
+                }
+
+                submit_button(
+                    __('Sync all Customers', 'hm-case-study-api'),
+                    'secondary',
+                    'submit',
+                    false,
+                    $start_attributes
+                );
+                ?>
+            </form>
+
+            <?php if ($is_running): ?>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
+                    <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_STOP); ?>" />
+                    <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
+                    <?php
+                    $stop_attributes = [
+                        'onclick' => "return confirm('" . esc_js($confirm_stop) . "');",
+                    ];
+
+                    if ($is_stopping) {
+                        $stop_attributes['disabled'] = 'disabled';
+                    }
+
+                    submit_button(
+                        __('Stop Bulk Sync', 'hm-case-study-api'),
+                        'delete',
+                        'submit',
+                        false,
+                        $stop_attributes
+                    );
+                    ?>
+                </form>
+            <?php endif; ?>
+
+            <a class="button" href="<?php echo esc_url(add_query_arg(['page' => self::MENU_SLUG], admin_url('admin.php'))); ?>">
+                <?php esc_html_e('Refresh Progress', 'hm-case-study-api'); ?>
+            </a>
+        </div>
 
         <?php if (!$is_enabled): ?>
             <p>
@@ -305,6 +351,10 @@ class BrevoAdminPage
             ? max(0, (int) wp_unslash($_GET[BrevoBulkSyncController::QUERY_COUNT]))
             : 0;
 
+        $total = isset($_GET[BrevoBulkSyncController::QUERY_TOTAL])
+            ? max(0, (int) wp_unslash($_GET[BrevoBulkSyncController::QUERY_TOTAL]))
+            : 0;
+
         $skipped = isset($_GET[BrevoBulkSyncController::QUERY_SKIPPED])
             ? max(0, (int) wp_unslash($_GET[BrevoBulkSyncController::QUERY_SKIPPED]))
             : 0;
@@ -318,11 +368,9 @@ class BrevoAdminPage
 
         switch ($notice) {
             case 'scheduled':
-                $class = $failed > 0 ? 'notice notice-warning' : 'notice notice-success';
-                $message = sprintf(
-                    __('Brevo sync scheduled for %d Customers.', 'hm-case-study-api'),
-                    $count
-                );
+                $class = 'notice notice-success';
+                $scheduled_base = $total > 0 ? $total : $count;
+                $message = sprintf(__('Brevo bulk sync started for %d Customers.', 'hm-case-study-api'), $scheduled_base);
 
                 if ($skipped > 0) {
                     $message .= ' ' . sprintf(
@@ -333,18 +381,30 @@ class BrevoAdminPage
 
                 if ($failed > 0) {
                     $message .= ' ' . sprintf(
-                        __('Failed to queue: %d. Check logs for details.', 'hm-case-study-api'),
+                        __('Immediate queue errors: %d. Check logs and progress details.', 'hm-case-study-api'),
                         $failed
                     );
                 }
                 break;
             case 'locked':
                 $class = 'notice notice-warning';
-                $message = __('Bulk sync is already being scheduled. Please wait and try again.', 'hm-case-study-api');
+                $message = __('A bulk sync run is already active.', 'hm-case-study-api');
                 break;
             case 'disabled':
                 $class = 'notice notice-warning';
                 $message = __('Bulk sync is disabled in settings.', 'hm-case-study-api');
+                break;
+            case 'stopping':
+                $class = 'notice notice-info';
+                $message = __('Stop requested. Bulk sync will stop after the current batch.', 'hm-case-study-api');
+                break;
+            case 'no_active_run':
+                $class = 'notice notice-warning';
+                $message = __('No active bulk sync run to stop.', 'hm-case-study-api');
+                break;
+            case 'nothing_to_sync':
+                $class = 'notice notice-info';
+                $message = __('No Customers available for bulk sync.', 'hm-case-study-api');
                 break;
             case 'invalid_action':
                 $class = 'notice notice-error';
@@ -361,6 +421,97 @@ class BrevoAdminPage
         }
         ?>
         <div class="<?php echo esc_attr($class); ?>"><p><?php echo esc_html($message); ?></p></div>
+        <?php
+    }
+
+    /**
+     * @param array<string,mixed> $run_state
+     */
+    private function renderBulkSyncProgress(array $run_state): void
+    {
+        $status = sanitize_key((string) ($run_state['status'] ?? 'idle'));
+        $total_count = max(0, (int) ($run_state['total_count'] ?? 0));
+        $scanned_count = max(0, (int) ($run_state['scanned_count'] ?? 0));
+        $eligible_count = max(0, (int) ($run_state['eligible_count'] ?? 0));
+        $processed_count = max(0, (int) ($run_state['processed_count'] ?? 0));
+        $success_count = max(0, (int) ($run_state['success_count'] ?? 0));
+        $failed_count = max(0, (int) ($run_state['failed_count'] ?? 0));
+        $queue_failed_count = max(0, (int) ($run_state['queue_failed_count'] ?? 0));
+        $skipped_invalid_count = max(0, (int) ($run_state['skipped_invalid_count'] ?? 0));
+        $scheduled_batches = max(0, (int) ($run_state['scheduled_batches'] ?? 0));
+
+        $progress_percent = 0;
+        if ($total_count > 0) {
+            $progress_percent = (int) floor(($scanned_count / $total_count) * 100);
+        }
+        $progress_percent = max(0, min(100, $progress_percent));
+
+        $status_labels = [
+            'idle' => __('Idle', 'hm-case-study-api'),
+            'running' => __('Running', 'hm-case-study-api'),
+            'stopping' => __('Stopping', 'hm-case-study-api'),
+            'completed' => __('Completed', 'hm-case-study-api'),
+            'cancelled' => __('Cancelled', 'hm-case-study-api'),
+            'failed' => __('Failed', 'hm-case-study-api'),
+        ];
+        $status_label = $status_labels[$status] ?? __('Idle', 'hm-case-study-api');
+        $message = (string) ($run_state['message'] ?? '');
+        ?>
+        <h3><?php esc_html_e('Bulk Sync Progress', 'hm-case-study-api'); ?></h3>
+        <p>
+            <strong><?php esc_html_e('Status:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html($status_label); ?>
+        </p>
+
+        <div style="max-width:720px; background:#f0f0f1; border:1px solid #dcdcde; height:22px; position:relative;">
+            <div style="height:100%; width:<?php echo esc_attr((string) $progress_percent); ?>%; background:#2271b1;"></div>
+        </div>
+        <p>
+            <?php
+            echo esc_html(
+                sprintf(
+                    __('%1$d%% (%2$s / %3$s scanned)', 'hm-case-study-api'),
+                    $progress_percent,
+                    number_format_i18n($scanned_count),
+                    number_format_i18n($total_count)
+                )
+            );
+            ?>
+        </p>
+
+        <table class="widefat striped" style="max-width:720px;">
+            <tbody>
+                <?php $this->renderSummaryRow(__('Eligible', 'hm-case-study-api'), $eligible_count); ?>
+                <?php $this->renderSummaryRow(__('Processed', 'hm-case-study-api'), $processed_count); ?>
+                <?php $this->renderSummaryRow(__('Success', 'hm-case-study-api'), $success_count); ?>
+                <?php $this->renderSummaryRow(__('Sync Failed', 'hm-case-study-api'), $failed_count); ?>
+                <?php $this->renderSummaryRow(__('Queue Failed', 'hm-case-study-api'), $queue_failed_count); ?>
+                <?php $this->renderSummaryRow(__('Skipped Invalid', 'hm-case-study-api'), $skipped_invalid_count); ?>
+                <?php $this->renderSummaryRow(__('Scheduled Batches', 'hm-case-study-api'), $scheduled_batches); ?>
+            </tbody>
+        </table>
+
+        <?php if ($message !== ''): ?>
+            <p><em><?php echo esc_html($message); ?></em></p>
+        <?php endif; ?>
+        <?php
+    }
+
+    /**
+     * @param array<string,mixed> $run_state
+     */
+    private function renderBulkSyncAutoRefresh(array $run_state): void
+    {
+        $status = sanitize_key((string) ($run_state['status'] ?? ''));
+        if (!in_array($status, ['running', 'stopping'], true)) {
+            return;
+        }
+        ?>
+        <script>
+            window.setTimeout(function () {
+                window.location.reload();
+            }, 5000);
+        </script>
         <?php
     }
 

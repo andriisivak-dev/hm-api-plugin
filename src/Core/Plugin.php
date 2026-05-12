@@ -191,12 +191,14 @@ class Plugin
 
         $sync_queue = \CSP\Brevo\SyncQueueFactory::create();
         $sync_queue->register();
+        $bulk_sync_service = new \CSP\Brevo\BrevoBulkSyncService($sync_queue);
+        $bulk_sync_service->register();
 
         // Admin UI (menu pages, list table, CSV importer)
         if (is_admin()) {
             (new \CSP\Admin\Customers\CustomerAdminUI())->register();
-            (new \CSP\Admin\Brevo\BrevoBulkSyncController(new \CSP\Brevo\BrevoBulkSyncService($sync_queue)))->register();
-            (new \CSP\Admin\Brevo\BrevoAdminPage())->register();
+            (new \CSP\Admin\Brevo\BrevoBulkSyncController($bulk_sync_service))->register();
+            (new \CSP\Admin\Brevo\BrevoAdminPage(null, null, $bulk_sync_service))->register();
             (new \CSP\Brevo\CustomerSyncHooks($sync_queue))->register();
         }
 

@@ -12,8 +12,10 @@ class BrevoBulkSyncController
     public const ADMIN_ACTION = 'csp_brevo_bulk_sync';
     public const NONCE_ACTION = 'csp_brevo_bulk_sync_action';
     public const BULK_ACTION_SYNC_ALL = 'sync_all_customers';
+    public const BULK_ACTION_STOP = 'stop_bulk_sync';
     public const QUERY_NOTICE = 'brevo_bulk_sync_notice';
     public const QUERY_COUNT = 'brevo_bulk_sync_count';
+    public const QUERY_TOTAL = 'brevo_bulk_sync_total';
     public const QUERY_SKIPPED = 'brevo_bulk_sync_skipped';
     public const QUERY_FAILED = 'brevo_bulk_sync_failed';
 
@@ -42,8 +44,23 @@ class BrevoBulkSyncController
         check_admin_referer(self::NONCE_ACTION);
 
         $bulk_action = isset($_POST['bulk_action']) ? sanitize_key((string) wp_unslash($_POST['bulk_action'])) : '';
-        if ($bulk_action !== self::BULK_ACTION_SYNC_ALL) {
+        if (!in_array($bulk_action, [self::BULK_ACTION_SYNC_ALL, self::BULK_ACTION_STOP], true)) {
             $this->redirect_with_notice('invalid_action');
+        }
+
+        if ($bulk_action === self::BULK_ACTION_STOP) {
+            $stop_result = $this->bulk_sync_service->request_stop();
+            $reason = sanitize_key((string) ($stop_result['reason'] ?? 'failed'));
+
+            if ($reason === 'stopping' || $reason === 'already_stopping') {
+                $this->redirect_with_notice('stopping');
+            }
+
+            if ($reason === 'no_active_run') {
+                $this->redirect_with_notice('no_active_run');
+            }
+
+            $this->redirect_with_notice('failed');
         }
 
         $result = $this->bulk_sync_service->schedule_all_customers('admin_bulk');
@@ -52,6 +69,7 @@ class BrevoBulkSyncController
         if ($reason === 'scheduled') {
             $this->redirect_with_notice('scheduled', [
                 self::QUERY_COUNT => (int) ($result['eligible_count'] ?? 0),
+                self::QUERY_TOTAL => (int) ($result['total_count'] ?? 0),
                 self::QUERY_SKIPPED => (int) ($result['skipped_invalid_count'] ?? 0),
                 self::QUERY_FAILED => (int) ($result['failed_count'] ?? 0),
             ]);
@@ -63,6 +81,10 @@ class BrevoBulkSyncController
 
         if ($reason === 'disabled') {
             $this->redirect_with_notice('disabled');
+        }
+
+        if ($reason === 'nothing_to_sync') {
+            $this->redirect_with_notice('nothing_to_sync');
         }
 
         $this->redirect_with_notice('failed');
