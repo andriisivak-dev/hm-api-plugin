@@ -9,6 +9,64 @@ use CSP\Repositories\CustomerRepository;
 class BrevoSyncDashboardService
 {
     /**
+     * @return array{items:array<int,array<string,mixed>>,total:int,page:int,per_page:int,total_pages:int}
+     */
+    public function get_failed_contacts_page(int $page = 1, int $per_page = 50): array
+    {
+        global $wpdb;
+
+        $page = max(1, $page);
+        $per_page = max(1, min(200, $per_page));
+        $offset = ($page - 1) * $per_page;
+        $table = CustomerRepository::table();
+
+        $count_sql = $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE brevo_sync_status = %s",
+            'failed'
+        );
+        $total = max(0, (int) $wpdb->get_var($count_sql));
+
+        $items = [];
+        if ($total > 0) {
+            $items_sql = $wpdb->prepare(
+                "SELECT id, company_name, email, brevo_sync_last_error, brevo_sync_last_attempt_at
+                 FROM {$table}
+                 WHERE brevo_sync_status = %s
+                 ORDER BY brevo_sync_last_attempt_at DESC, id DESC
+                 LIMIT %d OFFSET %d",
+                'failed',
+                $per_page,
+                $offset
+            );
+
+            $rows = (array) $wpdb->get_results($items_sql, ARRAY_A);
+            foreach ($rows as $row) {
+                $attempt_at = isset($row['brevo_sync_last_attempt_at']) ? (string) $row['brevo_sync_last_attempt_at'] : '';
+                $attempt_timestamp = strtotime($attempt_at);
+                $attempt_iso = $attempt_timestamp !== false ? gmdate('c', $attempt_timestamp) : '';
+
+                $items[] = [
+                    'id' => isset($row['id']) ? (int) $row['id'] : 0,
+                    'company_name' => isset($row['company_name']) ? (string) $row['company_name'] : '',
+                    'email' => isset($row['email']) ? (string) $row['email'] : '',
+                    'last_error' => isset($row['brevo_sync_last_error']) ? (string) $row['brevo_sync_last_error'] : '',
+                    'last_attempt_at' => $attempt_iso,
+                ];
+            }
+        }
+
+        $total_pages = $per_page > 0 ? (int) ceil($total / $per_page) : 1;
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $per_page,
+            'total_pages' => max(1, $total_pages),
+        ];
+    }
+
+    /**
      * @return array<string,int>
      */
     public function get_summary(): array

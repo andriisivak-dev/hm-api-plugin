@@ -26,17 +26,20 @@ class BrevoBulkSyncService
     private BrevoSettings $settings;
     private BrevoLogger $logger;
     private CustomerSyncService $sync_service;
+    private CustomerBrevoSyncMetaRepository $sync_meta_repository;
 
     public function __construct(
         ?SyncQueueInterface $sync_queue = null,
         ?BrevoSettings $settings = null,
         ?BrevoLogger $logger = null,
-        ?CustomerSyncService $sync_service = null
+        ?CustomerSyncService $sync_service = null,
+        ?CustomerBrevoSyncMetaRepository $sync_meta_repository = null
     ) {
         $this->settings = $settings ?? new BrevoSettings();
         $this->sync_queue = $sync_queue;
         $this->logger = $logger ?? new BrevoLogger($this->settings);
         $this->sync_service = $sync_service ?? new CustomerSyncService($this->settings);
+        $this->sync_meta_repository = $sync_meta_repository ?? new CustomerBrevoSyncMetaRepository();
     }
 
     public function register(): void
@@ -305,6 +308,10 @@ class BrevoBulkSyncService
                 if ($email === '' || !is_email($email)) {
                     $state['skipped_invalid_count']++;
                     $batch_skipped_invalid++;
+                    $this->sync_meta_repository->mark_sync_failure(
+                        $customer_id,
+                        'Invalid or missing email address for Brevo sync.'
+                    );
                     continue;
                 }
 
@@ -369,7 +376,7 @@ class BrevoBulkSyncService
                 return;
             }
 
-            if (!$this->schedule_next_batch($run_id)) {
+            if (!$this->schedule_next_batch($run_id, 1)) {
                 $state['status'] = self::STATUS_FAILED;
                 $state['queue_failed_count']++;
                 $state['message'] = 'Failed to schedule next bulk batch.';
@@ -593,7 +600,7 @@ class BrevoBulkSyncService
             'scheduled_at' => gmdate('c', $scheduled_at),
             'hook' => self::BATCH_HOOK,
             'group' => self::BATCH_GROUP,
-            'unique_flag' => true,
+            'unique_flag' => false,
         ]);
 
         if (ActionSchedulerSyncQueue::is_available()) {
@@ -606,7 +613,7 @@ class BrevoBulkSyncService
                 self::BATCH_HOOK,
                 [$payload],
                 self::BATCH_GROUP,
-                true
+                false
             );
             $success = (int) $action_id > 0;
 

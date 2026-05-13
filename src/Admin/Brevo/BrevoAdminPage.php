@@ -119,7 +119,6 @@ class BrevoAdminPage
                 <strong><?php esc_html_e('API key configured:', 'hm-case-study-api'); ?></strong>
                 <?php echo $this->isApiKeyConfigured() ? esc_html__('Yes', 'hm-case-study-api') : esc_html__('No', 'hm-case-study-api'); ?>
             </p>
-            <?php $this->renderSyncDashboardSummary(); ?>
             <form method="post" action="options.php">
                 <?php
                 settings_fields(self::OPTION_GROUP);
@@ -128,6 +127,7 @@ class BrevoAdminPage
                 ?>
             </form>
             <?php $this->renderBulkSyncActions($run_state); ?>
+            <?php $this->renderFailedContactsList(); ?>
         </div>
         <?php
     }
@@ -273,8 +273,6 @@ class BrevoAdminPage
             <?php esc_html_e('This will process all Customers in background batches. Existing Brevo contacts with the same email may be updated.', 'hm-case-study-api'); ?>
         </p>
 
-        <?php $this->renderBulkSyncProgress($run_state); ?>
-
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                 <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
@@ -381,7 +379,7 @@ class BrevoAdminPage
 
                 if ($failed > 0) {
                     $message .= ' ' . sprintf(
-                        __('Immediate queue errors: %d. Check logs and progress details.', 'hm-case-study-api'),
+                        __('Immediate queue errors: %d. Check logs and failed contacts list.', 'hm-case-study-api'),
                         $failed
                     );
                 }
@@ -427,79 +425,6 @@ class BrevoAdminPage
     /**
      * @param array<string,mixed> $run_state
      */
-    private function renderBulkSyncProgress(array $run_state): void
-    {
-        $status = sanitize_key((string) ($run_state['status'] ?? 'idle'));
-        $total_count = max(0, (int) ($run_state['total_count'] ?? 0));
-        $scanned_count = max(0, (int) ($run_state['scanned_count'] ?? 0));
-        $eligible_count = max(0, (int) ($run_state['eligible_count'] ?? 0));
-        $processed_count = max(0, (int) ($run_state['processed_count'] ?? 0));
-        $success_count = max(0, (int) ($run_state['success_count'] ?? 0));
-        $failed_count = max(0, (int) ($run_state['failed_count'] ?? 0));
-        $queue_failed_count = max(0, (int) ($run_state['queue_failed_count'] ?? 0));
-        $skipped_invalid_count = max(0, (int) ($run_state['skipped_invalid_count'] ?? 0));
-        $scheduled_batches = max(0, (int) ($run_state['scheduled_batches'] ?? 0));
-
-        $progress_percent = 0;
-        if ($total_count > 0) {
-            $progress_percent = (int) floor(($scanned_count / $total_count) * 100);
-        }
-        $progress_percent = max(0, min(100, $progress_percent));
-
-        $status_labels = [
-            'idle' => __('Idle', 'hm-case-study-api'),
-            'running' => __('Running', 'hm-case-study-api'),
-            'stopping' => __('Stopping', 'hm-case-study-api'),
-            'completed' => __('Completed', 'hm-case-study-api'),
-            'cancelled' => __('Cancelled', 'hm-case-study-api'),
-            'failed' => __('Failed', 'hm-case-study-api'),
-        ];
-        $status_label = $status_labels[$status] ?? __('Idle', 'hm-case-study-api');
-        $message = (string) ($run_state['message'] ?? '');
-        ?>
-        <h3><?php esc_html_e('Bulk Sync Progress', 'hm-case-study-api'); ?></h3>
-        <p>
-            <strong><?php esc_html_e('Status:', 'hm-case-study-api'); ?></strong>
-            <?php echo esc_html($status_label); ?>
-        </p>
-
-        <div style="max-width:720px; background:#f0f0f1; border:1px solid #dcdcde; height:22px; position:relative;">
-            <div style="height:100%; width:<?php echo esc_attr((string) $progress_percent); ?>%; background:#2271b1;"></div>
-        </div>
-        <p>
-            <?php
-            echo esc_html(
-                sprintf(
-                    __('%1$d%% (%2$s / %3$s scanned)', 'hm-case-study-api'),
-                    $progress_percent,
-                    number_format_i18n($scanned_count),
-                    number_format_i18n($total_count)
-                )
-            );
-            ?>
-        </p>
-
-        <table class="widefat striped" style="max-width:720px;">
-            <tbody>
-                <?php $this->renderSummaryRow(__('Eligible', 'hm-case-study-api'), $eligible_count); ?>
-                <?php $this->renderSummaryRow(__('Processed', 'hm-case-study-api'), $processed_count); ?>
-                <?php $this->renderSummaryRow(__('Success', 'hm-case-study-api'), $success_count); ?>
-                <?php $this->renderSummaryRow(__('Sync Failed', 'hm-case-study-api'), $failed_count); ?>
-                <?php $this->renderSummaryRow(__('Queue Failed', 'hm-case-study-api'), $queue_failed_count); ?>
-                <?php $this->renderSummaryRow(__('Skipped Invalid', 'hm-case-study-api'), $skipped_invalid_count); ?>
-                <?php $this->renderSummaryRow(__('Scheduled Batches', 'hm-case-study-api'), $scheduled_batches); ?>
-            </tbody>
-        </table>
-
-        <?php if ($message !== ''): ?>
-            <p><em><?php echo esc_html($message); ?></em></p>
-        <?php endif; ?>
-        <?php
-    }
-
-    /**
-     * @param array<string,mixed> $run_state
-     */
     private function renderBulkSyncAutoRefresh(array $run_state): void
     {
         $status = sanitize_key((string) ($run_state['status'] ?? ''));
@@ -515,35 +440,109 @@ class BrevoAdminPage
         <?php
     }
 
-    private function renderSyncDashboardSummary(): void
+    private function renderFailedContactsList(): void
     {
-        $summary = $this->dashboard_service->get_summary();
+        $page = isset($_GET['brevo_failed_page']) ? max(1, (int) wp_unslash($_GET['brevo_failed_page'])) : 1;
+        $report = $this->dashboard_service->get_failed_contacts_page($page, 50);
+        $items = (array) ($report['items'] ?? []);
+        $total = max(0, (int) ($report['total'] ?? 0));
+        $current_page = max(1, (int) ($report['page'] ?? 1));
+        $total_pages = max(1, (int) ($report['total_pages'] ?? 1));
+        $per_page = max(1, (int) ($report['per_page'] ?? 50));
+        $start_index = (($current_page - 1) * $per_page) + 1;
         ?>
         <hr />
-        <h2><?php esc_html_e('Local Sync Status Summary', 'hm-case-study-api'); ?></h2>
+        <h2><?php esc_html_e('Failed Contact Sync Log', 'hm-case-study-api'); ?></h2>
         <p>
-            <?php esc_html_e('These counters are based only on local WordPress sync metadata.', 'hm-case-study-api'); ?>
+            <?php
+            echo esc_html(
+                sprintf(
+                    __('Total failed contacts: %s', 'hm-case-study-api'),
+                    number_format_i18n($total)
+                )
+            );
+            ?>
         </p>
-        <table class="widefat striped" style="max-width: 720px;">
-            <tbody>
-                <?php $this->renderSummaryRow(__('Total Customers', 'hm-case-study-api'), (int) ($summary['total_customers'] ?? 0)); ?>
-                <?php $this->renderSummaryRow(__('Successfully synced', 'hm-case-study-api'), (int) ($summary['synced_success'] ?? 0)); ?>
-                <?php $this->renderSummaryRow(__('Failed', 'hm-case-study-api'), (int) ($summary['synced_failed'] ?? 0)); ?>
-                <?php $this->renderSummaryRow(__('Pending / scheduled', 'hm-case-study-api'), (int) ($summary['pending_or_scheduled'] ?? 0)); ?>
-                <?php $this->renderSummaryRow(__('Never synced', 'hm-case-study-api'), (int) ($summary['never_synced'] ?? 0)); ?>
-                <?php $this->renderSummaryRow(__('Deleted / soft-deleted (if tracked)', 'hm-case-study-api'), (int) ($summary['soft_deleted'] ?? 0)); ?>
-            </tbody>
-        </table>
+
+        <?php if ($items === []): ?>
+            <p><?php esc_html_e('No failed contacts right now.', 'hm-case-study-api'); ?></p>
+            <?php return; ?>
+        <?php endif; ?>
+
+        <ol start="<?php echo esc_attr((string) $start_index); ?>">
+            <?php foreach ($items as $item): ?>
+                <?php
+                $id = isset($item['id']) ? (int) $item['id'] : 0;
+                $company = isset($item['company_name']) ? (string) $item['company_name'] : '';
+                $email = isset($item['email']) ? (string) $item['email'] : '';
+                $error = isset($item['last_error']) ? (string) $item['last_error'] : '';
+                $attempt_at = $this->formatFailedAttemptDate((string) ($item['last_attempt_at'] ?? ''));
+                ?>
+                <li style="margin-bottom:10px;">
+                    <strong><?php echo esc_html($company !== '' ? $company : __('Unknown company', 'hm-case-study-api')); ?></strong>
+                    <?php if ($email !== ''): ?>
+                        <span> (<?php echo esc_html($email); ?>)</span>
+                    <?php endif; ?>
+                    <?php if ($id > 0): ?>
+                        <span> #<?php echo esc_html((string) $id); ?></span>
+                    <?php endif; ?>
+                    <br />
+                    <span><?php echo esc_html(sprintf(__('Reason: %s', 'hm-case-study-api'), $error !== '' ? $error : __('Unknown error', 'hm-case-study-api'))); ?></span>
+                    <br />
+                    <span><?php echo esc_html(sprintf(__('Last attempt: %s', 'hm-case-study-api'), $attempt_at)); ?></span>
+                </li>
+            <?php endforeach; ?>
+        </ol>
+
+        <?php if ($total_pages > 1): ?>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <?php if ($current_page > 1): ?>
+                    <a class="button" href="<?php echo esc_url(add_query_arg([
+                        'page' => self::MENU_SLUG,
+                        'brevo_failed_page' => $current_page - 1,
+                    ], admin_url('admin.php'))); ?>">
+                        <?php esc_html_e('Previous', 'hm-case-study-api'); ?>
+                    </a>
+                <?php endif; ?>
+                <span>
+                    <?php
+                    echo esc_html(
+                        sprintf(
+                            __('Page %1$s of %2$s', 'hm-case-study-api'),
+                            number_format_i18n($current_page),
+                            number_format_i18n($total_pages)
+                        )
+                    );
+                    ?>
+                </span>
+                <?php if ($current_page < $total_pages): ?>
+                    <a class="button" href="<?php echo esc_url(add_query_arg([
+                        'page' => self::MENU_SLUG,
+                        'brevo_failed_page' => $current_page + 1,
+                    ], admin_url('admin.php'))); ?>">
+                        <?php esc_html_e('Next', 'hm-case-study-api'); ?>
+                    </a>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
         <?php
     }
 
-    private function renderSummaryRow(string $label, int $count): void
+    private function formatFailedAttemptDate(string $iso): string
     {
-        ?>
-        <tr>
-            <th scope="row"><?php echo esc_html($label); ?></th>
-            <td><strong><?php echo esc_html(number_format_i18n(max(0, $count))); ?></strong></td>
-        </tr>
-        <?php
+        $iso = trim($iso);
+        if ($iso === '') {
+            return '-';
+        }
+
+        $timestamp = strtotime($iso);
+        if ($timestamp === false) {
+            return $iso;
+        }
+
+        return wp_date(
+            get_option('date_format') . ' ' . get_option('time_format'),
+            $timestamp
+        );
     }
 }
