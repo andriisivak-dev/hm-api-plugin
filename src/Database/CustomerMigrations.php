@@ -16,7 +16,7 @@ namespace CSP\Database;
 class CustomerMigrations
 {
     private const DB_VERSION_OPTION = 'csp_clients_db_version';
-    private const DB_VERSION        = '5';
+    private const DB_VERSION        = '6';
 
     /**
      * Run on plugin activation.
@@ -65,8 +65,8 @@ class CustomerMigrations
             address TEXT NULL,
             city VARCHAR(120) NULL,
             state VARCHAR(120) NULL,
-            phone VARCHAR(50) NULL,
-            email VARCHAR(191) NULL,
+            phone VARCHAR(100) NULL,
+            email VARCHAR(200) NULL,
             customer_segment VARCHAR(100) NULL,
             billing_center VARCHAR(100) NULL,
             logo_id BIGINT UNSIGNED NULL,
