@@ -16,7 +16,7 @@ namespace CSP\Database;
 class CustomerMigrations
 {
     private const DB_VERSION_OPTION = 'csp_clients_db_version';
-    private const DB_VERSION        = '6';
+    private const DB_VERSION        = '7';
 
     /**
      * Run on plugin activation.
