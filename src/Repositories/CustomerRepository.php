@@ -194,7 +194,8 @@ class CustomerRepository
         $city            = trim((string) ($data['city'] ?? ''));
         $state           = trim((string) ($data['state'] ?? ''));
         $phone           = trim((string) ($data['phone'] ?? ''));
-        $email           = sanitize_email((string) ($data['email'] ?? ''));
+        $email           = preg_replace('/\s+/', '', (string) ($data['email'] ?? ''));
+        $email           = is_string($email) ? $email : '';
         $customerSegment = trim((string) ($data['customer_segment'] ?? ''));
         $billingCenter   = trim((string) ($data['billing_center'] ?? ''));
         $updatedAt       = current_time('mysql');
