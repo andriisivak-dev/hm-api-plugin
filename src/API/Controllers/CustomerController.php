@@ -22,6 +22,7 @@ use CSP\Exceptions\ApiException;
  *   GET    /customers                    — paginated list (super-admin only)
  *   POST   /customers                    — create customer (super-admin only)
  *   GET    /customers/stats              — total count (super-admin only)
+ *   GET    /customers/industry-segments  — available taxonomy segments (super-admin only)
  *   GET    /customers/{id}               — single record (super-admin only)
  *   PATCH  /customers/{id}               — update customer (super-admin only)
  *   DELETE /customers/{id}               — delete customer (super-admin only)
@@ -34,6 +35,8 @@ use CSP\Exceptions\ApiException;
  */
 class CustomerController
 {
+    private const INDUSTRY_SEGMENT_TAXONOMY = 'hm_industry_segment';
+
     private SyncQueueInterface $sync_queue;
     private CustomerChangeDetector $change_detector;
     private CustomerSyncService $sync_service;
@@ -117,7 +120,10 @@ class CustomerController
         $phone           = sanitize_text_field((string) ($request->get_param('phone') ?? ''));
         $emailRaw        = trim((string) ($request->get_param('email') ?? ''));
         $email           = $emailRaw !== '' ? sanitize_email($emailRaw) : '';
-        $customerSegment = sanitize_text_field((string) ($request->get_param('customer_segment') ?? ''));
+        $customerSegment = $this->normalizeCustomerSegment(
+            (string) ($request->get_param('customer_segment') ?? ''),
+            (string) ($request->get_param('customer_segment_slug') ?? '')
+        );
         $billingCenter   = sanitize_text_field((string) ($request->get_param('billing_center') ?? ''));
         $updatedAt       = current_time('mysql');
 
@@ -197,6 +203,37 @@ class CustomerController
     }
 
     // -------------------------------------------------------------------------
+    // GET /customers/industry-segments
+    // -------------------------------------------------------------------------
+
+    public function industrySegments(WP_REST_Request $request)
+    {
+        $this->requireSuperAdmin();
+
+        $terms = get_terms([
+            'taxonomy' => self::INDUSTRY_SEGMENT_TAXONOMY,
+            'hide_empty' => false,
+            'orderby' => 'name',
+            'order' => 'ASC',
+        ]);
+
+        if (is_wp_error($terms)) {
+            return ApiResponse::success([]);
+        }
+
+        $items = array_map(static function ($term): array {
+            return [
+                'term_id' => (int) ($term->term_id ?? 0),
+                'name' => (string) ($term->name ?? ''),
+                'slug' => (string) ($term->slug ?? ''),
+                'count' => (int) ($term->count ?? 0),
+            ];
+        }, (array) $terms);
+
+        return ApiResponse::success($items);
+    }
+
+    // -------------------------------------------------------------------------
     // GET /customers/{id}
     // -------------------------------------------------------------------------
 
@@ -253,8 +290,13 @@ class CustomerController
             ? trim((string) $json['email'])
             : (string) ($current->email ?? '');
         $email = $emailRaw !== '' ? sanitize_email($emailRaw) : '';
-        $customerSegment = array_key_exists('customer_segment', $json)
-            ? sanitize_text_field((string) $json['customer_segment'])
+        $segmentProvided = array_key_exists('customer_segment', $json)
+            || array_key_exists('customer_segment_slug', $json);
+        $customerSegment = $segmentProvided
+            ? $this->normalizeCustomerSegment(
+                (string) ($json['customer_segment'] ?? ''),
+                (string) ($json['customer_segment_slug'] ?? '')
+            )
             : (string) ($current->customer_segment ?? '');
         $billingCenter = array_key_exists('billing_center', $json)
             ? sanitize_text_field((string) $json['billing_center'])
@@ -436,6 +478,8 @@ class CustomerController
      */
     private function prepareItem(object $item): array
     {
+        $customerSegment = (string) ($item->customer_segment ?? '');
+
         return [
             'id'               => (int) ($item->id ?? 0),
             'external_id'      => (string) ($item->external_id ?? ''),
@@ -446,7 +490,8 @@ class CustomerController
             'city'             => (string) ($item->city ?? ''),
             'state'            => (string) ($item->state ?? ''),
             'billing_center'   => (string) ($item->billing_center ?? ''),
-            'customer_segment' => (string) ($item->customer_segment ?? ''),
+            'customer_segment' => $customerSegment,
+            'customer_segment_slug' => $this->resolveCustomerSegmentSlug($customerSegment),
             'logo_id'          => (int) ($item->logo_id ?? 0),
             'logo_url'         => $this->resolveLogoUrl($item->logo_id ?? 0),
             'updated_at'       => (string) ($item->updated_at ?? ''),
@@ -542,6 +587,60 @@ class CustomerController
         }
         $url = wp_get_attachment_url($logoId);
         return is_string($url) ? $url : '';
+    }
+
+    private function normalizeCustomerSegment(string $segmentInput, string $slugInput = ''): string
+    {
+        $segment = sanitize_text_field($segmentInput);
+        $slug = sanitize_title($slugInput);
+
+        if ($segment === '' && $slug === '') {
+            return '';
+        }
+
+        if ($slug !== '') {
+            $termByExplicitSlug = get_term_by('slug', $slug, self::INDUSTRY_SEGMENT_TAXONOMY);
+            if ($termByExplicitSlug instanceof \WP_Term) {
+                return (string) $termByExplicitSlug->name;
+            }
+        }
+
+        if ($segment !== '') {
+            $segmentAsSlug = sanitize_title($segment);
+            $termBySegmentSlug = get_term_by('slug', $segmentAsSlug, self::INDUSTRY_SEGMENT_TAXONOMY);
+            if ($termBySegmentSlug instanceof \WP_Term) {
+                return (string) $termBySegmentSlug->name;
+            }
+
+            $termByName = get_term_by('name', $segment, self::INDUSTRY_SEGMENT_TAXONOMY);
+            if ($termByName instanceof \WP_Term) {
+                return (string) $termByName->name;
+            }
+
+            return $segment;
+        }
+
+        return $slug;
+    }
+
+    private function resolveCustomerSegmentSlug(string $customerSegment): string
+    {
+        $segment = sanitize_text_field($customerSegment);
+        if ($segment === '') {
+            return '';
+        }
+
+        $termBySlug = get_term_by('slug', sanitize_title($segment), self::INDUSTRY_SEGMENT_TAXONOMY);
+        if ($termBySlug instanceof \WP_Term) {
+            return (string) $termBySlug->slug;
+        }
+
+        $termByName = get_term_by('name', $segment, self::INDUSTRY_SEGMENT_TAXONOMY);
+        if ($termByName instanceof \WP_Term) {
+            return (string) $termByName->slug;
+        }
+
+        return '';
     }
 
     private function sanitizeSearch(string $search): string

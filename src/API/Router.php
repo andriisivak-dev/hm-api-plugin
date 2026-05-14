@@ -86,6 +86,7 @@ class Router
         $this->addRoute($ns, 'GET',    '/customers',                      CustomerController::class, 'index');
         $this->addRoute($ns, 'POST',   '/customers',                      CustomerController::class, 'create');
         $this->addRoute($ns, 'GET',    '/customers/stats',                CustomerController::class, 'stats');
+        $this->addRoute($ns, 'GET',    '/customers/industry-segments',    CustomerController::class, 'industrySegments');
         $this->addRoute($ns, 'GET',    '/customers/(?P<id>\d+)',          CustomerController::class, 'show');
         $this->addRoute($ns, 'PATCH',  '/customers/(?P<id>\d+)',          CustomerController::class, 'update');
         $this->addRoute($ns, 'DELETE', '/customers/(?P<id>\d+)',          CustomerController::class, 'delete');
