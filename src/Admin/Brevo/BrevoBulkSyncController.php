@@ -8,6 +8,8 @@ use CSP\Brevo\BrevoBulkSyncService;
 
 class BrevoBulkSyncController
 {
+    private const TEMPORARILY_DISABLED = true;
+
     public const MENU_SLUG = 'csp-brevo-settings';
     public const ADMIN_ACTION = 'csp_brevo_bulk_sync';
     public const NONCE_ACTION = 'csp_brevo_bulk_sync_action';
@@ -31,6 +33,11 @@ class BrevoBulkSyncController
         add_action('admin_post_' . self::ADMIN_ACTION, [$this, 'handle']);
     }
 
+    public static function isTemporarilyDisabled(): bool
+    {
+        return self::TEMPORARILY_DISABLED;
+    }
+
     public function handle(): void
     {
         if (!current_user_can('manage_options')) {
@@ -46,6 +53,10 @@ class BrevoBulkSyncController
         $bulk_action = isset($_POST['bulk_action']) ? sanitize_key((string) wp_unslash($_POST['bulk_action'])) : '';
         if (!in_array($bulk_action, [self::BULK_ACTION_SYNC_ALL, self::BULK_ACTION_STOP], true)) {
             $this->redirect_with_notice('invalid_action');
+        }
+
+        if ($bulk_action === self::BULK_ACTION_SYNC_ALL && self::isTemporarilyDisabled()) {
+            $this->redirect_with_notice('temporarily_disabled');
         }
 
         if ($bulk_action === self::BULK_ACTION_STOP) {

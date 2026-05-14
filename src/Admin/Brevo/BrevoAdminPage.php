@@ -261,7 +261,8 @@ class BrevoAdminPage
      */
     private function renderBulkSyncActions(array $run_state): void
     {
-        $is_enabled = $this->settings->is_bulk_sync_enabled();
+        $is_temporarily_disabled = BrevoBulkSyncController::isTemporarilyDisabled();
+        $is_enabled = $this->settings->is_bulk_sync_enabled() && !$is_temporarily_disabled;
         $is_running = in_array((string) ($run_state['status'] ?? ''), ['running', 'stopping'], true);
         $is_stopping = (string) ($run_state['status'] ?? '') === 'stopping';
         $confirm_start = __('Are you sure you want to start Brevo sync for all Customers?', 'hm-case-study-api');
@@ -329,7 +330,15 @@ class BrevoAdminPage
 
         <?php if (!$is_enabled): ?>
             <p>
-                <em><?php esc_html_e('Bulk sync is disabled. Enable "Bulk Sync Enabled" in settings to use this action.', 'hm-case-study-api'); ?></em>
+                <em>
+                    <?php
+                    echo esc_html(
+                        $is_temporarily_disabled
+                            ? __('Bulk sync is temporarily disabled in code.', 'hm-case-study-api')
+                            : __('Bulk sync is disabled. Enable "Bulk Sync Enabled" in settings to use this action.', 'hm-case-study-api')
+                    );
+                    ?>
+                </em>
             </p>
         <?php endif; ?>
         <?php
@@ -391,6 +400,10 @@ class BrevoAdminPage
             case 'disabled':
                 $class = 'notice notice-warning';
                 $message = __('Bulk sync is disabled in settings.', 'hm-case-study-api');
+                break;
+            case 'temporarily_disabled':
+                $class = 'notice notice-warning';
+                $message = __('Bulk sync is temporarily disabled in code.', 'hm-case-study-api');
                 break;
             case 'stopping':
                 $class = 'notice notice-info';
