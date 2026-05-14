@@ -71,13 +71,11 @@ class BrevoAdminPage
         $this->addNumberField('brevo_deleted_customers_list_id', 'Deleted Customers List ID', 'csp_brevo_lists_section');
         $this->addCheckboxField('brevo_sync_enabled', 'Sync Enabled', 'csp_brevo_sync_section');
         $this->addCheckboxField('brevo_soft_delete_enabled', 'Soft Delete Enabled', 'csp_brevo_sync_section');
-        $this->addCheckboxField('brevo_use_phone_field', 'Use PHONE Field', 'csp_brevo_sync_section');
-        $this->addCheckboxField('brevo_use_sms_field', 'Use SMS Field', 'csp_brevo_sync_section');
         $this->addNumberField('brevo_timeout', 'HTTP Timeout (seconds)', 'csp_brevo_http_section', 5, 60);
         $this->addNumberField('brevo_max_retries', 'Max Retries', 'csp_brevo_http_section', 0, 5);
         $this->addCheckboxField('brevo_debug_logging', 'Debug Logging', 'csp_brevo_logging_section');
         $this->addCheckboxField('brevo_bulk_sync_enabled', 'Bulk Sync Enabled', 'csp_brevo_bulk_section');
-        $this->addNumberField('brevo_bulk_sync_batch_size', 'Bulk Sync Batch Size', 'csp_brevo_bulk_section', 10, 200);
+        $this->addNumberField('brevo_bulk_sync_batch_size', 'Bulk Sync Batch Size', 'csp_brevo_bulk_section', 500, 1000);
         $this->addNumberField('brevo_bulk_sync_lock_ttl', 'Bulk Sync Lock TTL (seconds)', 'csp_brevo_bulk_section', 1, null);
     }
 
@@ -92,13 +90,11 @@ class BrevoAdminPage
             'brevo_deleted_customers_list_id' => max(0, (int) ($input['brevo_deleted_customers_list_id'] ?? 0)),
             'brevo_sync_enabled' => !empty($input['brevo_sync_enabled']) ? 1 : 0,
             'brevo_soft_delete_enabled' => !empty($input['brevo_soft_delete_enabled']) ? 1 : 0,
-            'brevo_use_phone_field' => !empty($input['brevo_use_phone_field']) ? 1 : 0,
-            'brevo_use_sms_field' => !empty($input['brevo_use_sms_field']) ? 1 : 0,
             'brevo_timeout' => $this->clampInt((int) ($input['brevo_timeout'] ?? $defaults['brevo_timeout']), 5, 60),
             'brevo_max_retries' => $this->clampInt((int) ($input['brevo_max_retries'] ?? $defaults['brevo_max_retries']), 0, 5),
             'brevo_debug_logging' => !empty($input['brevo_debug_logging']) ? 1 : 0,
             'brevo_bulk_sync_enabled' => !empty($input['brevo_bulk_sync_enabled']) ? 1 : 0,
-            'brevo_bulk_sync_batch_size' => $this->clampInt((int) ($input['brevo_bulk_sync_batch_size'] ?? $defaults['brevo_bulk_sync_batch_size']), 10, 200),
+            'brevo_bulk_sync_batch_size' => $this->clampInt((int) ($input['brevo_bulk_sync_batch_size'] ?? $defaults['brevo_bulk_sync_batch_size']), 500, 1000),
             'brevo_bulk_sync_lock_ttl' => max(1, (int) ($input['brevo_bulk_sync_lock_ttl'] ?? $defaults['brevo_bulk_sync_lock_ttl'])),
         ];
     }
@@ -113,7 +109,6 @@ class BrevoAdminPage
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Brevo Settings', 'hm-case-study-api'); ?></h1>
-            <?php $this->renderBulkSyncAutoRefresh($run_state); ?>
             <?php $this->renderBulkSyncNotice(); ?>
             <p>
                 <strong><?php esc_html_e('API key configured:', 'hm-case-study-api'); ?></strong>
@@ -205,10 +200,6 @@ class BrevoAdminPage
                 return $this->settings->is_sync_enabled();
             case 'brevo_soft_delete_enabled':
                 return $this->settings->is_soft_delete_enabled();
-            case 'brevo_use_phone_field':
-                return $this->settings->use_phone_field();
-            case 'brevo_use_sms_field':
-                return $this->settings->use_sms_field();
             case 'brevo_timeout':
                 return $this->settings->get_timeout();
             case 'brevo_max_retries':
@@ -235,13 +226,11 @@ class BrevoAdminPage
             'brevo_deleted_customers_list_id' => 0,
             'brevo_sync_enabled' => 0,
             'brevo_soft_delete_enabled' => 1,
-            'brevo_use_phone_field' => 1,
-            'brevo_use_sms_field' => 0,
             'brevo_timeout' => 15,
             'brevo_max_retries' => 3,
             'brevo_debug_logging' => 0,
             'brevo_bulk_sync_enabled' => 1,
-            'brevo_bulk_sync_batch_size' => 50,
+            'brevo_bulk_sync_batch_size' => 500,
             'brevo_bulk_sync_lock_ttl' => 300,
         ];
     }
@@ -265,7 +254,10 @@ class BrevoAdminPage
         $is_enabled = $this->settings->is_bulk_sync_enabled() && !$is_temporarily_disabled;
         $is_running = in_array((string) ($run_state['status'] ?? ''), ['running', 'stopping'], true);
         $is_stopping = (string) ($run_state['status'] ?? '') === 'stopping';
+        $is_resumable = $this->bulk_sync_service->is_run_resumable($run_state);
+        $status_label = (string) ($run_state['status'] ?? 'idle');
         $confirm_start = __('Are you sure you want to start Brevo sync for all Customers?', 'hm-case-study-api');
+        $confirm_resync = __('Start full re-sync from the beginning and ignore current checkpoint?', 'hm-case-study-api');
         $confirm_stop = __('Stop the active Brevo bulk sync after current batch?', 'hm-case-study-api');
         ?>
         <hr />
@@ -284,7 +276,7 @@ class BrevoAdminPage
                     'onclick' => "return confirm('" . esc_js($confirm_start) . "');",
                 ];
 
-                if (!$is_enabled || $is_running) {
+                if (!$is_enabled || $is_running || $is_resumable) {
                     $start_attributes['disabled'] = 'disabled';
                 }
 
@@ -298,35 +290,86 @@ class BrevoAdminPage
                 ?>
             </form>
 
-            <?php if ($is_running): ?>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                    <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
-                    <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_STOP); ?>" />
-                    <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
-                    <?php
-                    $stop_attributes = [
-                        'onclick' => "return confirm('" . esc_js($confirm_stop) . "');",
-                    ];
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
+                <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_RESYNC_ALL); ?>" />
+                <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
+                <?php
+                $resync_attributes = [
+                    'onclick' => "return confirm('" . esc_js($confirm_resync) . "');",
+                ];
+                if (!$is_enabled || $is_running || !$is_resumable) {
+                    $resync_attributes['disabled'] = 'disabled';
+                }
 
-                    if ($is_stopping) {
-                        $stop_attributes['disabled'] = 'disabled';
-                    }
+                submit_button(
+                    __('Resync All Customers', 'hm-case-study-api'),
+                    'secondary',
+                    'submit',
+                    false,
+                    $resync_attributes
+                );
+                ?>
+            </form>
 
-                    submit_button(
-                        __('Stop Bulk Sync', 'hm-case-study-api'),
-                        'delete',
-                        'submit',
-                        false,
-                        $stop_attributes
-                    );
-                    ?>
-                </form>
-            <?php endif; ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
+                <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_STOP); ?>" />
+                <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
+                <?php
+                $stop_attributes = [
+                    'onclick' => "return confirm('" . esc_js($confirm_stop) . "');",
+                ];
 
-            <a class="button" href="<?php echo esc_url(add_query_arg(['page' => self::MENU_SLUG], admin_url('admin.php'))); ?>">
-                <?php esc_html_e('Refresh Progress', 'hm-case-study-api'); ?>
-            </a>
+                if ($is_stopping) {
+                    $stop_attributes['disabled'] = 'disabled';
+                }
+
+                submit_button(
+                    __('Stop Bulk Sync', 'hm-case-study-api'),
+                    'delete',
+                    'submit',
+                    false,
+                    $stop_attributes
+                );
+                ?>
+            </form>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="<?php echo esc_attr(BrevoBulkSyncController::ADMIN_ACTION); ?>" />
+                <input type="hidden" name="bulk_action" value="<?php echo esc_attr(BrevoBulkSyncController::BULK_ACTION_RESUME); ?>" />
+                <?php wp_nonce_field(BrevoBulkSyncController::NONCE_ACTION); ?>
+                <?php
+                $resume_attributes = [];
+                if (!$is_resumable) {
+                    $resume_attributes['disabled'] = 'disabled';
+                }
+
+                submit_button(
+                    __('Refresh Progress', 'hm-case-study-api'),
+                    'secondary',
+                    'submit',
+                    false,
+                    $resume_attributes
+                );
+                ?>
+            </form>
         </div>
+
+        <p>
+            <strong><?php esc_html_e('Run status:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html($status_label); ?> |
+            <strong><?php esc_html_e('Scanned:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html((string) max(0, (int) ($run_state['scanned_count'] ?? 0))); ?> |
+            <strong><?php esc_html_e('Processed:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html((string) max(0, (int) ($run_state['processed_count'] ?? 0))); ?> |
+            <strong><?php esc_html_e('Success:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html((string) max(0, (int) ($run_state['success_count'] ?? 0))); ?> |
+            <strong><?php esc_html_e('Failed:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html((string) max(0, (int) ($run_state['failed_count'] ?? 0))); ?> |
+            <strong><?php esc_html_e('Last ID:', 'hm-case-study-api'); ?></strong>
+            <?php echo esc_html((string) max(0, (int) ($run_state['last_customer_id'] ?? 0))); ?>
+        </p>
 
         <?php if (!$is_enabled): ?>
             <p>
@@ -393,9 +436,18 @@ class BrevoAdminPage
                     );
                 }
                 break;
+            case 'resync_scheduled':
+                $class = 'notice notice-success';
+                $resync_total = $total > 0 ? $total : $count;
+                $message = sprintf(__('Brevo full re-sync started from scratch for %d Customers.', 'hm-case-study-api'), $resync_total);
+                break;
             case 'locked':
                 $class = 'notice notice-warning';
                 $message = __('A bulk sync run is already active.', 'hm-case-study-api');
+                break;
+            case 'resume_required':
+                $class = 'notice notice-warning';
+                $message = __('Previous bulk sync was interrupted. Use "Refresh Progress" to continue from checkpoint.', 'hm-case-study-api');
                 break;
             case 'disabled':
                 $class = 'notice notice-warning';
@@ -408,6 +460,18 @@ class BrevoAdminPage
             case 'stopping':
                 $class = 'notice notice-info';
                 $message = __('Stop requested. Bulk sync will stop after the current batch.', 'hm-case-study-api');
+                break;
+            case 'stopped':
+                $class = 'notice notice-info';
+                $message = __('Bulk sync stopped.', 'hm-case-study-api');
+                break;
+            case 'resumed':
+                $class = 'notice notice-success';
+                $message = __('Bulk sync resumed from the last checkpoint.', 'hm-case-study-api');
+                break;
+            case 'not_resumable':
+                $class = 'notice notice-warning';
+                $message = __('There is no interrupted bulk sync run to resume.', 'hm-case-study-api');
                 break;
             case 'no_active_run':
                 $class = 'notice notice-warning';
@@ -432,24 +496,6 @@ class BrevoAdminPage
         }
         ?>
         <div class="<?php echo esc_attr($class); ?>"><p><?php echo esc_html($message); ?></p></div>
-        <?php
-    }
-
-    /**
-     * @param array<string,mixed> $run_state
-     */
-    private function renderBulkSyncAutoRefresh(array $run_state): void
-    {
-        $status = sanitize_key((string) ($run_state['status'] ?? ''));
-        if (!in_array($status, ['running', 'stopping'], true)) {
-            return;
-        }
-        ?>
-        <script>
-            window.setTimeout(function () {
-                window.location.reload();
-            }, 5000);
-        </script>
         <?php
     }
 

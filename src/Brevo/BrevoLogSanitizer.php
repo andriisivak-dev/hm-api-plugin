@@ -17,6 +17,11 @@ class BrevoLogSanitizer
         'raw_headers',
         'request_headers',
         'response_headers',
+        'csp_brevo_settings',
+        'settings_dump',
+        'acf_settings',
+        'db_dump',
+        'database_dump',
     ];
 
     /** @var string[] */
@@ -28,6 +33,8 @@ class BrevoLogSanitizer
         'request_body',
         'response_body',
         'attributes',
+        'jsonbody',
+        'filebody',
     ];
 
     public function sanitize_context(array $context): array
@@ -42,6 +49,11 @@ class BrevoLogSanitizer
         foreach ($data as $key => $value) {
             $normalized_key = is_string($key) ? $key : (string) $key;
             $sanitized[$key] = $this->sanitize_value($normalized_key, $value);
+        }
+
+        if (count($sanitized) > 40) {
+            $sanitized = array_slice($sanitized, 0, 40, true);
+            $sanitized['_truncated'] = true;
         }
 
         return $sanitized;
@@ -95,7 +107,16 @@ class BrevoLogSanitizer
     private function is_redacted_key(string $key): bool
     {
         $key = strtolower($key);
-        return in_array($key, self::REDACTED_KEYS, true);
+        if (in_array($key, self::REDACTED_KEYS, true)) {
+            return true;
+        }
+
+        return str_contains($key, 'authorization')
+            || str_contains($key, 'api_key')
+            || str_contains($key, 'header')
+            || str_contains($key, 'secret')
+            || str_contains($key, 'token')
+            || str_contains($key, 'dump');
     }
 
     private function is_payload_key(string $key): bool

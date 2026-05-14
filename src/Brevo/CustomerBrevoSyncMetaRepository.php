@@ -162,6 +162,27 @@ class CustomerBrevoSyncMetaRepository
         return $this->update_meta_batch($customer_id, $meta);
     }
 
+    public function clear_failed_sync_log(): int
+    {
+        global $wpdb;
+
+        $table = CustomerRepository::table();
+        $sql = $wpdb->prepare(
+            "UPDATE {$table}
+             SET brevo_sync_status = NULL,
+                 brevo_sync_last_error = NULL
+             WHERE brevo_sync_status = %s",
+            'failed'
+        );
+
+        $updated = $wpdb->query($sql);
+        if ($updated === false) {
+            return 0;
+        }
+
+        return max(0, (int) $updated);
+    }
+
     /**
      * @return array<string,string|null>
      */

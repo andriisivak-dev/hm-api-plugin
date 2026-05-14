@@ -8,11 +8,13 @@ class BrevoLogger
 {
     private BrevoSettings $settings;
     private BrevoLogSanitizer $sanitizer;
+    private string $log_file_path;
 
     public function __construct(?BrevoSettings $settings = null, ?BrevoLogSanitizer $sanitizer = null)
     {
         $this->settings = $settings ?? new BrevoSettings();
         $this->sanitizer = $sanitizer ?? new BrevoLogSanitizer();
+        $this->log_file_path = $this->resolve_log_file_path();
     }
 
     /**
@@ -45,21 +47,83 @@ class BrevoLogger
 
     private function log(string $level, string $event, array $context): void
     {
-        $safe_context = $this->sanitizer->sanitize_context($context);
-
-        $payload = [
-            'channel' => 'brevo',
-            'level' => $level,
-            'event' => $event,
-            'time' => gmdate('c'),
-            'context' => $safe_context,
-        ];
-
-        $encoded = wp_json_encode($payload);
-        if (!is_string($encoded) || $encoded === '') {
-            $encoded = '{"channel":"brevo","level":"error","event":"brevo_log_encode_failed"}';
+        $safe_context = $this->normalize_context_for_log($this->sanitizer->sanitize_context($context));
+        $event = sanitize_key($event);
+        if ($event === '') {
+            $event = 'brevo_unknown_event';
         }
 
-        error_log('[csp_brevo] ' . $encoded);
+        $entry = array_merge([
+            'timestamp' => gmdate('c'),
+            'level' => $level,
+            'event' => $event,
+            'channel' => 'brevo',
+        ], $safe_context);
+
+        $encoded = wp_json_encode($entry, JSON_UNESCAPED_SLASHES);
+        if (!is_string($encoded) || $encoded === '') {
+            $encoded = '{"timestamp":"' . gmdate('c') . '","level":"error","event":"brevo_log_encode_failed","channel":"brevo"}';
+        }
+
+        $this->write_log_line($encoded);
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     * @return array<string,mixed>
+     */
+    private function normalize_context_for_log(array $context): array
+    {
+        $normalized = $context;
+        unset(
+            $normalized['timestamp'],
+            $normalized['level'],
+            $normalized['event'],
+            $normalized['channel']
+        );
+
+        if (isset($normalized['email'])) {
+            $normalized['email_masked'] = (string) $normalized['email'];
+            unset($normalized['email']);
+        }
+
+        if (isset($normalized['phone'])) {
+            $normalized['phone_masked'] = (string) $normalized['phone'];
+            unset($normalized['phone']);
+        }
+
+        if (isset($normalized['sms'])) {
+            $normalized['sms_masked'] = (string) $normalized['sms'];
+            unset($normalized['sms']);
+        }
+
+        if (isset($normalized['address'])) {
+            $normalized['address_present'] = true;
+            unset($normalized['address']);
+        }
+
+        if (isset($normalized['linkedin'])) {
+            $normalized['linkedin_masked'] = 'linkedin.com';
+            unset($normalized['linkedin']);
+        }
+
+        return $normalized;
+    }
+
+    private function resolve_log_file_path(): string
+    {
+        $base_dir = defined('WP_CONTENT_DIR')
+            ? (string) WP_CONTENT_DIR
+            : untrailingslashit(ABSPATH) . '/wp-content';
+
+        return trailingslashit($base_dir) . 'brevo-sync.log';
+    }
+
+    private function write_log_line(string $line): void
+    {
+        $written = @file_put_contents($this->log_file_path, $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+        if ($written === false) {
+            error_log('[csp_brevo] ' . $line);
+        }
     }
 }

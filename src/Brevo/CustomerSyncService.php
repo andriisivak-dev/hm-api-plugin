@@ -223,6 +223,7 @@ class CustomerSyncService
                 'endpoint' => '/contacts',
                 'method' => 'POST',
                 'success' => false,
+                'retry_count' => 0,
                 'duration_ms' => $duration_ms,
                 'error_type' => get_class($exception),
                 'error_message' => $safe_error,

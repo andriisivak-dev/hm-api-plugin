@@ -14,13 +14,11 @@ class BrevoSettings
         'brevo_deleted_customers_list_id' => 0,
         'brevo_sync_enabled' => false,
         'brevo_soft_delete_enabled' => true,
-        'brevo_use_phone_field' => true,
-        'brevo_use_sms_field' => false,
         'brevo_timeout' => 15,
         'brevo_max_retries' => 3,
         'brevo_debug_logging' => false,
         'brevo_bulk_sync_enabled' => true,
-        'brevo_bulk_sync_batch_size' => 50,
+        'brevo_bulk_sync_batch_size' => 500,
         'brevo_bulk_sync_lock_ttl' => 300,
     ];
 
@@ -84,16 +82,6 @@ class BrevoSettings
         return $this->resolve_int('MTG_BREVO_MAX_RETRIES', 'brevo_max_retries', 3, 0, 5);
     }
 
-    public function use_sms_field(): bool
-    {
-        return $this->resolve_bool('MTG_BREVO_USE_SMS_FIELD', 'brevo_use_sms_field', false);
-    }
-
-    public function use_phone_field(): bool
-    {
-        return $this->resolve_bool('MTG_BREVO_USE_PHONE_FIELD', 'brevo_use_phone_field', true);
-    }
-
     public function is_soft_delete_enabled(): bool
     {
         return $this->resolve_bool('MTG_BREVO_SOFT_DELETE_ENABLED', 'brevo_soft_delete_enabled', true);
@@ -106,7 +94,7 @@ class BrevoSettings
 
     public function get_bulk_sync_batch_size(): int
     {
-        return $this->resolve_int('MTG_BREVO_BULK_SYNC_BATCH_SIZE', 'brevo_bulk_sync_batch_size', 50, 10, 200);
+        return $this->resolve_int('MTG_BREVO_BULK_SYNC_BATCH_SIZE', 'brevo_bulk_sync_batch_size', 500, 500, 1000);
     }
 
     public function get_bulk_sync_lock_ttl(): int

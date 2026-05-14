@@ -113,11 +113,11 @@ class CustomerBrevoMapper
             self::ATTR_SYNC_SOURCE => sanitize_key($sync_source),
         ];
 
-        if ($this->settings->use_phone_field() && $raw_phone !== '') {
+        if ($raw_phone !== '') {
             $attributes[self::ATTR_PHONE] = $raw_phone;
         }
 
-        if ($this->settings->use_sms_field() && $raw_sms !== '') {
+        if ($raw_sms !== '') {
             $attributes[self::ATTR_SMS] = $raw_sms;
         }
 

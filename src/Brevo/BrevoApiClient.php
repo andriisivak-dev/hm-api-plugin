@@ -52,9 +52,9 @@ class BrevoApiClient
         $api_key = $this->settings->get_api_key();
         if ($api_key === '') {
             $this->logger->error('brevo_api_key_missing', [
-                'event' => 'brevo_api_request_failed',
                 'method' => $method,
                 'endpoint' => $this->normalize_endpoint($path),
+                'success' => false,
             ]);
 
             throw new BrevoApiException(
@@ -82,10 +82,12 @@ class BrevoApiClient
                     'method' => $method,
                     'attempt' => $attempt,
                     'max_attempts' => $max_attempts,
+                    'retry_count' => max(0, $attempt - 1),
                     'retryable' => $is_retryable,
                     'duration_ms' => $duration_ms,
                     'wp_error_code' => $response->get_error_code(),
                     'wp_error_message' => $response->get_error_message(),
+                    'success' => false,
                 ];
 
                 if ($is_retryable && $attempt < $max_attempts) {
@@ -117,9 +119,11 @@ class BrevoApiClient
                 $this->logger->info('brevo_api_request_success', [
                     'endpoint' => $endpoint,
                     'method' => $method,
-                    'status_code' => $status_code,
+                    'response_code' => $status_code,
                     'attempt' => $attempt,
+                    'retry_count' => max(0, $attempt - 1),
                     'duration_ms' => $duration_ms,
+                    'success' => true,
                 ]);
 
                 return [
@@ -133,12 +137,14 @@ class BrevoApiClient
             $log_context = [
                 'endpoint' => $endpoint,
                 'method' => $method,
-                'status_code' => $status_code,
+                'response_code' => $status_code,
                 'attempt' => $attempt,
                 'max_attempts' => $max_attempts,
+                'retry_count' => max(0, $attempt - 1),
                 'retryable' => $is_retryable,
                 'duration_ms' => $duration_ms,
                 'response_body' => $parsed_body,
+                'success' => false,
             ];
 
             if ($is_retryable && $attempt < $max_attempts) {

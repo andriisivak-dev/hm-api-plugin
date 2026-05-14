@@ -8,13 +8,15 @@ use CSP\Brevo\BrevoBulkSyncService;
 
 class BrevoBulkSyncController
 {
-    private const TEMPORARILY_DISABLED = true;
+    private const TEMPORARILY_DISABLED = false;
 
     public const MENU_SLUG = 'csp-brevo-settings';
     public const ADMIN_ACTION = 'csp_brevo_bulk_sync';
     public const NONCE_ACTION = 'csp_brevo_bulk_sync_action';
     public const BULK_ACTION_SYNC_ALL = 'sync_all_customers';
+    public const BULK_ACTION_RESYNC_ALL = 'resync_all_customers';
     public const BULK_ACTION_STOP = 'stop_bulk_sync';
+    public const BULK_ACTION_RESUME = 'resume_bulk_sync';
     public const QUERY_NOTICE = 'brevo_bulk_sync_notice';
     public const QUERY_COUNT = 'brevo_bulk_sync_count';
     public const QUERY_TOTAL = 'brevo_bulk_sync_total';
@@ -51,11 +53,11 @@ class BrevoBulkSyncController
         check_admin_referer(self::NONCE_ACTION);
 
         $bulk_action = isset($_POST['bulk_action']) ? sanitize_key((string) wp_unslash($_POST['bulk_action'])) : '';
-        if (!in_array($bulk_action, [self::BULK_ACTION_SYNC_ALL, self::BULK_ACTION_STOP], true)) {
+        if (!in_array($bulk_action, [self::BULK_ACTION_SYNC_ALL, self::BULK_ACTION_RESYNC_ALL, self::BULK_ACTION_STOP, self::BULK_ACTION_RESUME], true)) {
             $this->redirect_with_notice('invalid_action');
         }
 
-        if ($bulk_action === self::BULK_ACTION_SYNC_ALL && self::isTemporarilyDisabled()) {
+        if (in_array($bulk_action, [self::BULK_ACTION_SYNC_ALL, self::BULK_ACTION_RESYNC_ALL], true) && self::isTemporarilyDisabled()) {
             $this->redirect_with_notice('temporarily_disabled');
         }
 
@@ -67,6 +69,10 @@ class BrevoBulkSyncController
                 $this->redirect_with_notice('stopping');
             }
 
+            if ($reason === 'stopped') {
+                $this->redirect_with_notice('stopped');
+            }
+
             if ($reason === 'no_active_run') {
                 $this->redirect_with_notice('no_active_run');
             }
@@ -74,11 +80,38 @@ class BrevoBulkSyncController
             $this->redirect_with_notice('failed');
         }
 
-        $result = $this->bulk_sync_service->schedule_all_customers('admin_bulk');
+        if ($bulk_action === self::BULK_ACTION_RESUME) {
+            $resume_result = $this->bulk_sync_service->resume_from_checkpoint('admin_bulk_refresh');
+            $reason = sanitize_key((string) ($resume_result['reason'] ?? 'failed'));
+
+            if ($reason === 'resumed') {
+                $this->redirect_with_notice('resumed');
+            }
+
+            if ($reason === 'not_resumable') {
+                $this->redirect_with_notice('not_resumable');
+            }
+
+            if ($reason === 'locked') {
+                $this->redirect_with_notice('locked');
+            }
+
+            if ($reason === 'disabled') {
+                $this->redirect_with_notice('disabled');
+            }
+
+            $this->redirect_with_notice('failed');
+        }
+
+        $is_forced_resync = ($bulk_action === self::BULK_ACTION_RESYNC_ALL);
+        $result = $this->bulk_sync_service->schedule_all_customers(
+            $is_forced_resync ? 'admin_bulk_resync' : 'admin_bulk',
+            $is_forced_resync
+        );
         $reason = sanitize_key((string) ($result['reason'] ?? 'failed'));
 
         if ($reason === 'scheduled') {
-            $this->redirect_with_notice('scheduled', [
+            $this->redirect_with_notice($is_forced_resync ? 'resync_scheduled' : 'scheduled', [
                 self::QUERY_COUNT => (int) ($result['eligible_count'] ?? 0),
                 self::QUERY_TOTAL => (int) ($result['total_count'] ?? 0),
                 self::QUERY_SKIPPED => (int) ($result['skipped_invalid_count'] ?? 0),
@@ -88,6 +121,10 @@ class BrevoBulkSyncController
 
         if ($reason === 'locked') {
             $this->redirect_with_notice('locked');
+        }
+
+        if ($reason === 'resume_required') {
+            $this->redirect_with_notice('resume_required');
         }
 
         if ($reason === 'disabled') {
