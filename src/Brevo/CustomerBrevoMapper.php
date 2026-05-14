@@ -92,22 +92,38 @@ class CustomerBrevoMapper
         }
 
         $attributes = [
-            self::ATTR_FIRST_NAME => $this->read_string($customer, ['first_name', 'firstname']),
-            self::ATTR_LAST_NAME => $this->read_string($customer, ['last_name', 'lastname']),
-            self::ATTR_EXT_ID => $this->read_string($customer, ['external_id', 'wp_customer_id', 'customer_id', 'id']),
+            self::ATTR_FIRST_NAME => $this->normalize_text_value(
+                $this->read_string($customer, ['first_name', 'firstname'])
+            ),
+            self::ATTR_LAST_NAME => $this->normalize_text_value(
+                $this->read_string($customer, ['last_name', 'lastname'])
+            ),
+            self::ATTR_EXT_ID => $this->normalize_text_value(
+                $this->read_string($customer, ['external_id', 'wp_customer_id', 'customer_id', 'id'])
+            ),
             self::ATTR_LANDLINE_NUMBER => $this->normalize_phone(
                 $this->read_string($customer, ['landline_number', 'landline'])
             ),
-            self::ATTR_CONTACT_TIMEZONE => $this->read_string($customer, ['contact_timezone', 'timezone']),
-            self::ATTR_JOB_TITLE => $this->read_string($customer, ['job_title']),
-            self::ATTR_LINKEDIN => $this->normalize_linkedin_url($this->read_string($customer, ['linkedin', 'linkedin_url'])),
-            self::ATTR_COMPANY_NAME => $this->read_string($customer, ['company_name', 'company']),
-            self::ATTR_ADDRESS => $this->read_string($customer, ['address']),
-            self::ATTR_CITY => $this->read_string($customer, ['city']),
-            self::ATTR_STATE => $this->read_string($customer, ['state']),
-            self::ATTR_CUSTOMER_SEGMENT => $this->read_string($customer, ['segment', 'customer_segment']),
-            self::ATTR_CUSTOMER_SUBSEGMENT => $this->read_string($customer, ['subsegment', 'customer_subsegment']),
-            self::ATTR_BILLING_CENTER => $this->read_string($customer, ['billing_center']),
+            self::ATTR_CONTACT_TIMEZONE => $this->normalize_text_value(
+                $this->read_string($customer, ['contact_timezone', 'timezone'])
+            ),
+            self::ATTR_JOB_TITLE => $this->normalize_text_value($this->read_string($customer, ['job_title'])),
+            self::ATTR_LINKEDIN => $this->normalize_linkedin_url(
+                $this->read_string($customer, ['linkedin', 'linkedin_url'])
+            ),
+            self::ATTR_COMPANY_NAME => $this->normalize_text_value(
+                $this->read_string($customer, ['company_name', 'company'])
+            ),
+            self::ATTR_ADDRESS => $this->normalize_text_value($this->read_string($customer, ['address'])),
+            self::ATTR_CITY => $this->normalize_text_value($this->read_string($customer, ['city'])),
+            self::ATTR_STATE => $this->normalize_text_value($this->read_string($customer, ['state'])),
+            self::ATTR_CUSTOMER_SEGMENT => $this->normalize_text_value(
+                $this->read_string($customer, ['segment', 'customer_segment'])
+            ),
+            self::ATTR_CUSTOMER_SUBSEGMENT => $this->normalize_text_value(
+                $this->read_string($customer, ['subsegment', 'customer_subsegment'])
+            ),
+            self::ATTR_BILLING_CENTER => $this->normalize_text_value($this->read_string($customer, ['billing_center'])),
             self::ATTR_WP_STATUS => $status,
             self::ATTR_WP_LAST_SYNC_AT => gmdate('c'),
             self::ATTR_SYNC_SOURCE => sanitize_key($sync_source),
@@ -177,7 +193,7 @@ class CustomerBrevoMapper
 
     private function normalize_email(string $email): string
     {
-        $email = strtolower(trim($email));
+        $email = strtolower($this->normalize_text_value($email));
         if ($email === '') {
             return '';
         }
@@ -192,7 +208,7 @@ class CustomerBrevoMapper
 
     private function normalize_phone(string $phone): string
     {
-        $phone = trim($phone);
+        $phone = $this->normalize_text_value($phone);
         if ($phone === '') {
             return '';
         }
@@ -211,13 +227,25 @@ class CustomerBrevoMapper
 
     private function normalize_linkedin_url(string $linkedin): string
     {
-        $linkedin = trim($linkedin);
+        $linkedin = $this->normalize_text_value($linkedin);
         if ($linkedin === '') {
             return '';
         }
 
         $sanitized = esc_url_raw($linkedin);
         return is_string($sanitized) ? $sanitized : '';
+    }
+
+    private function normalize_text_value(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        $decoded = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return trim(sanitize_text_field($decoded));
     }
 
     /**
