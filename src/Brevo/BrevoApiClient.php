@@ -10,7 +10,7 @@ class BrevoApiClient
     private const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 
     /** @var string[] */
-    private const ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE'];
+    private const ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
     private BrevoSettings $settings;
     private BrevoLogger $logger;
@@ -29,6 +29,11 @@ class BrevoApiClient
     public function post(string $path, array $body = [], array $query = []): array
     {
         return $this->request('POST', $path, $body, $query);
+    }
+
+    public function put(string $path, array $body = [], array $query = []): array
+    {
+        return $this->request('PUT', $path, $body, $query);
     }
 
     public function patch(string $path, array $body = [], array $query = []): array
@@ -134,6 +139,7 @@ class BrevoApiClient
             }
 
             $is_retryable = $this->is_retryable_status($status_code);
+            $error_summary = $this->extract_error_summary($parsed_body);
             $log_context = [
                 'endpoint' => $endpoint,
                 'method' => $method,
@@ -144,6 +150,9 @@ class BrevoApiClient
                 'retryable' => $is_retryable,
                 'duration_ms' => $duration_ms,
                 'response_body' => $parsed_body,
+                'brevo_error_code' => $error_summary['code'],
+                'brevo_error_message' => $error_summary['message'],
+                'brevo_error_details' => $error_summary['details'],
                 'success' => false,
             ];
 
@@ -155,14 +164,22 @@ class BrevoApiClient
 
             $this->logger->error('brevo_api_request_failed', $log_context);
 
+            $exception_message = sprintf('Brevo API request failed with status code %d.', $status_code);
+            if ($error_summary['message'] !== '') {
+                $exception_message .= ' ' . $error_summary['message'];
+            }
+
             throw new BrevoApiException(
-                sprintf('Brevo API request failed with status code %d.', $status_code),
+                $exception_message,
                 $status_code,
                 $is_retryable,
                 'http_error',
                 [
                     'endpoint' => $endpoint,
                     'method' => $method,
+                    'brevo_error_code' => $error_summary['code'],
+                    'brevo_error_message' => $error_summary['message'],
+                    'brevo_error_details' => $error_summary['details'],
                 ]
             );
         }
@@ -250,6 +267,113 @@ class BrevoApiClient
         }
 
         return $raw_body;
+    }
+
+    /**
+     * @param mixed $parsed_body
+     * @return array{code:string,message:string,details:string}
+     */
+    private function extract_error_summary($parsed_body): array
+    {
+        $summary = [
+            'code' => '',
+            'message' => '',
+            'details' => '',
+        ];
+
+        if (is_string($parsed_body)) {
+            $summary['message'] = $this->sanitize_error_text($parsed_body);
+            return $summary;
+        }
+
+        if (!is_array($parsed_body)) {
+            return $summary;
+        }
+
+        $summary['code'] = $this->sanitize_error_text(
+            $this->read_first_error_field($parsed_body, ['code', 'errorCode', 'error_code'])
+        );
+
+        $summary['message'] = $this->sanitize_error_text(
+            $this->read_first_error_field($parsed_body, ['message', 'msg', 'description', 'error_description'])
+        );
+
+        if ($summary['message'] === '' && isset($parsed_body['error'])) {
+            $summary['message'] = $this->sanitize_error_text($this->stringify_error_value($parsed_body['error']));
+        }
+
+        if (isset($parsed_body['details'])) {
+            $summary['details'] = $this->sanitize_error_text($this->stringify_error_value($parsed_body['details']));
+        } elseif (isset($parsed_body['errors'])) {
+            $summary['details'] = $this->sanitize_error_text($this->stringify_error_value($parsed_body['errors']));
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @param array<string,mixed> $body
+     * @param string[] $keys
+     */
+    private function read_first_error_field(array $body, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $body)) {
+                continue;
+            }
+
+            $value = $body[$key];
+            if (is_string($value) || is_numeric($value)) {
+                return (string) $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function stringify_error_value($value, int $depth = 0): string
+    {
+        if ($depth >= 3) {
+            return '';
+        }
+
+        if (is_string($value) || is_numeric($value) || is_bool($value)) {
+            return (string) $value;
+        }
+
+        if (is_array($value)) {
+            $fragments = [];
+            foreach ($value as $item) {
+                $fragment = $this->stringify_error_value($item, $depth + 1);
+                if ($fragment === '') {
+                    continue;
+                }
+                $fragments[] = $fragment;
+                if (count($fragments) >= 5) {
+                    break;
+                }
+            }
+
+            return implode(' | ', $fragments);
+        }
+
+        return '';
+    }
+
+    private function sanitize_error_text(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+
+        $text = wp_strip_all_tags($text);
+        $text = sanitize_text_field($text);
+
+        return substr($text, 0, 300);
     }
 
     /**

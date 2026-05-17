@@ -373,7 +373,7 @@ class CustomerController
             return ApiResponse::error(ErrorCodes::INTERNAL_ERROR, 'Customer updated but failed to load updated record.', 500);
         }
 
-        if ($this->change_detector->has_relevant_changes($id, $customer)) {
+        if ($this->change_detector->should_sync_on_update($id, $customer)) {
             $this->queueCustomerSync($customer, 'rest_update', CustomerSyncService::ACTION_UPSERT);
         }
 

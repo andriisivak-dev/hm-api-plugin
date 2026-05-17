@@ -61,7 +61,7 @@ class CustomerSyncHooks
                 return;
             }
 
-            if (!$is_new && !$this->change_detector->has_relevant_changes($customer_id, $customer)) {
+            if (!$is_new && !$this->change_detector->should_sync_on_update($customer_id, $customer)) {
                 $this->logger->debug('brevo_admin_sync_skipped_no_changes', [
                     'customer_id' => $customer_id,
                     'source' => $source,

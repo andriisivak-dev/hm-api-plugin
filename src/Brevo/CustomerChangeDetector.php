@@ -49,6 +49,29 @@ class CustomerChangeDetector
     /**
      * @param array<string,mixed>|object $customer
      */
+    public function should_sync_on_update(int $customer_id, $customer): bool
+    {
+        if ($this->has_relevant_changes($customer_id, $customer)) {
+            return true;
+        }
+
+        $status = $this->sync_meta_repository->get_meta(
+            $customer_id,
+            CustomerBrevoSyncMetaRepository::META_SYNC_STATUS
+        );
+
+        $status = (string) $status;
+
+        if ($status === 'success' || $status === 'disabled') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string,mixed>|object $customer
+     */
     public function store_fingerprint(int $customer_id, $customer): bool
     {
         $fingerprint = $this->build_sync_fingerprint($customer);
@@ -84,18 +107,13 @@ class CustomerChangeDetector
     private function build_normalized_snapshot($customer): array
     {
         $snapshot = [
+            'ext_id' => $this->normalize_text($this->read_value($customer, ['ext_id', 'external_id', 'wp_customer_id', 'customer_id', 'id'])),
             'email' => $this->normalize_email($this->read_value($customer, ['email'])),
-            'first_name' => $this->normalize_text($this->read_value($customer, ['first_name', 'firstname'])),
-            'last_name' => $this->normalize_text($this->read_value($customer, ['last_name', 'lastname'])),
             'phone' => $this->normalize_phone($this->read_value($customer, ['phone'])),
-            'sms_phone' => $this->normalize_phone($this->read_value($customer, ['mobile_phone', 'sms_phone', 'sms', 'phone_sms'])),
             'company_name' => $this->normalize_text($this->read_value($customer, ['company_name', 'company'])),
             'segment' => $this->normalize_text($this->read_value($customer, ['segment', 'customer_segment'])),
-            'subsegment' => $this->normalize_text($this->read_value($customer, ['subsegment', 'customer_subsegment'])),
             'landline_number' => $this->normalize_phone($this->read_value($customer, ['landline_number', 'landline'])),
             'contact_timezone' => $this->normalize_text($this->read_value($customer, ['contact_timezone', 'timezone'])),
-            'job_title' => $this->normalize_text($this->read_value($customer, ['job_title'])),
-            'linkedin' => $this->normalize_linkedin($this->read_value($customer, ['linkedin', 'linkedin_url'])),
             'address' => $this->normalize_text($this->read_value($customer, ['address'])),
             'city' => $this->normalize_text($this->read_value($customer, ['city'])),
             'state' => $this->normalize_text($this->read_value($customer, ['state'])),
@@ -161,30 +179,4 @@ class CustomerChangeDetector
         return (string) preg_replace('/\D+/', '', $phone);
     }
 
-    private function normalize_linkedin(string $value): string
-    {
-        $value = trim($value);
-        if ($value === '') {
-            return '';
-        }
-
-        $url = esc_url_raw($value);
-        if (!is_string($url) || $url === '') {
-            return '';
-        }
-
-        $parts = wp_parse_url($url);
-        if (!is_array($parts)) {
-            return '';
-        }
-
-        $host = isset($parts['host']) ? strtolower((string) $parts['host']) : '';
-        $path = isset($parts['path']) ? trim((string) $parts['path']) : '';
-
-        if ($host === '' && $path === '') {
-            return '';
-        }
-
-        return trim($host . $path, '/');
-    }
 }

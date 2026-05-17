@@ -21,10 +21,34 @@ class BrevoContactService
      */
     public function upsert_contact(array $payload): array
     {
-        $payload['email'] = $this->extract_required_email($payload);
-        $payload['updateEnabled'] = true;
+        $ext_id = $this->extract_required_ext_id($payload);
+        $update_payload = $this->build_update_payload($payload);
 
-        return $this->api_client->post('/contacts', $payload);
+        try {
+            return $this->api_client->put(
+                '/contacts/' . rawurlencode($ext_id),
+                $update_payload,
+                ['identifierType' => 'ext_id']
+            );
+        } catch (BrevoApiException $exception) {
+            if (!$this->is_contact_not_found_exception($exception)) {
+                throw $exception;
+            }
+        }
+
+        try {
+            return $this->api_client->post('/contacts', $this->build_create_payload($payload, $ext_id));
+        } catch (BrevoApiException $exception) {
+            if (!$this->is_ext_id_already_assigned_exception($exception)) {
+                throw $exception;
+            }
+        }
+
+        return $this->api_client->put(
+            '/contacts/' . rawurlencode($ext_id),
+            $update_payload,
+            ['identifierType' => 'ext_id']
+        );
     }
 
     /**
@@ -36,15 +60,32 @@ class BrevoContactService
         int $active_customers_list_id = 0,
         int $deleted_customers_list_id = 0
     ): array {
-        $email = $this->extract_required_email($payload);
+        $ext_id = $this->extract_required_ext_id($payload);
+        $email = $this->extract_optional_email($payload);
         $result = $this->upsert_contact($payload);
 
         if ($active_customers_list_id > 0) {
-            $this->remove_from_list($active_customers_list_id, [$email]);
+            try {
+                $this->remove_from_list_by_ext_ids($active_customers_list_id, [$ext_id]);
+            } catch (\Throwable $exception) {
+                if ($email !== '') {
+                    $this->remove_from_list($active_customers_list_id, [$email]);
+                } else {
+                    throw $exception;
+                }
+            }
         }
 
         if ($deleted_customers_list_id > 0) {
-            $this->add_to_list($deleted_customers_list_id, [$email]);
+            try {
+                $this->add_to_list_by_ext_ids($deleted_customers_list_id, [$ext_id]);
+            } catch (\Throwable $exception) {
+                if ($email !== '') {
+                    $this->add_to_list($deleted_customers_list_id, [$email]);
+                } else {
+                    throw $exception;
+                }
+            }
         }
 
         return $result;
@@ -76,6 +117,48 @@ class BrevoContactService
             sprintf('/contacts/lists/%d/contacts/add', $list_id),
             ['emails' => $this->normalize_emails($emails)]
         );
+    }
+
+    /**
+     * @param string[] $ext_ids
+     * @return array{status_code:int,body:mixed,headers:array}
+     */
+    public function remove_from_list_by_ext_ids(int $list_id, array $ext_ids): array
+    {
+        $this->assert_valid_list_id($list_id);
+        $normalized_ext_ids = $this->normalize_ext_ids($ext_ids);
+        $endpoint = sprintf('/contacts/lists/%d/contacts/remove', $list_id);
+
+        try {
+            return $this->api_client->post($endpoint, ['extIds' => $normalized_ext_ids]);
+        } catch (BrevoApiException $exception) {
+            if ($exception->get_status_code() !== 400) {
+                throw $exception;
+            }
+
+            return $this->api_client->post($endpoint, ['ext_ids' => $normalized_ext_ids]);
+        }
+    }
+
+    /**
+     * @param string[] $ext_ids
+     * @return array{status_code:int,body:mixed,headers:array}
+     */
+    public function add_to_list_by_ext_ids(int $list_id, array $ext_ids): array
+    {
+        $this->assert_valid_list_id($list_id);
+        $normalized_ext_ids = $this->normalize_ext_ids($ext_ids);
+        $endpoint = sprintf('/contacts/lists/%d/contacts/add', $list_id);
+
+        try {
+            return $this->api_client->post($endpoint, ['extIds' => $normalized_ext_ids]);
+        } catch (BrevoApiException $exception) {
+            if ($exception->get_status_code() !== 400) {
+                throw $exception;
+            }
+
+            return $this->api_client->post($endpoint, ['ext_ids' => $normalized_ext_ids]);
+        }
     }
 
     /**
@@ -195,14 +278,100 @@ class BrevoContactService
      */
     private function extract_required_email(array $payload): string
     {
-        $email = isset($payload['email']) ? (string) $payload['email'] : '';
-        $email = strtolower(trim($email));
+        $email = $this->extract_optional_email($payload);
 
-        if ($email === '' || !is_email($email)) {
+        if ($email === '') {
             throw new \InvalidArgumentException('Valid contact email is required.');
         }
 
         return $email;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    private function extract_optional_email(array $payload): string
+    {
+        $email = isset($payload['email']) ? (string) $payload['email'] : '';
+        $email = strtolower(trim($email));
+
+        if ($email === '' || !is_email($email)) {
+            return '';
+        }
+
+        return $email;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     */
+    private function extract_required_ext_id(array $payload): string
+    {
+        $ext_id = isset($payload['ext_id']) ? trim((string) $payload['ext_id']) : '';
+        if ($ext_id === '') {
+            throw new \InvalidArgumentException('Valid contact EXT_ID is required.');
+        }
+
+        return sanitize_text_field($ext_id);
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>
+     */
+    private function build_update_payload(array $payload): array
+    {
+        $attributes = isset($payload['attributes']) && is_array($payload['attributes'])
+            ? $payload['attributes']
+            : [];
+
+        $email = $this->extract_optional_email($payload);
+        if ($email !== '') {
+            $attributes['EMAIL'] = $email;
+        }
+
+        $update_payload = [
+            'attributes' => $attributes,
+            'forceMerge' => true,
+        ];
+
+        if (isset($payload['listIds']) && is_array($payload['listIds'])) {
+            $list_ids = array_values(array_unique(array_filter(array_map('intval', $payload['listIds']), static fn(int $id): bool => $id > 0)));
+            if ($list_ids !== []) {
+                $update_payload['listIds'] = $list_ids;
+            }
+        }
+
+        return $update_payload;
+    }
+
+    /**
+     * @param array<string,mixed> $payload
+     * @return array<string,mixed>
+     */
+    private function build_create_payload(array $payload, string $ext_id): array
+    {
+        $create_payload = [
+            'ext_id' => $ext_id,
+            'attributes' => isset($payload['attributes']) && is_array($payload['attributes']) ? $payload['attributes'] : [],
+            'updateEnabled' => true,
+            'forceMerge' => true,
+            'getId' => true,
+        ];
+
+        $email = $this->extract_optional_email($payload);
+        if ($email !== '') {
+            $create_payload['email'] = $email;
+        }
+
+        if (isset($payload['listIds']) && is_array($payload['listIds'])) {
+            $list_ids = array_values(array_unique(array_filter(array_map('intval', $payload['listIds']), static fn(int $id): bool => $id > 0)));
+            if ($list_ids !== []) {
+                $create_payload['listIds'] = $list_ids;
+            }
+        }
+
+        return $create_payload;
     }
 
     private function assert_valid_list_id(int $list_id): void
@@ -236,6 +405,65 @@ class BrevoContactService
         }
 
         return array_values($normalized);
+    }
+
+    /**
+     * @param string[] $ext_ids
+     * @return string[]
+     */
+    private function normalize_ext_ids(array $ext_ids): array
+    {
+        $normalized = [];
+
+        foreach ($ext_ids as $ext_id) {
+            $candidate = trim(sanitize_text_field((string) $ext_id));
+            if ($candidate === '') {
+                continue;
+            }
+
+            $normalized[$candidate] = $candidate;
+        }
+
+        if ($normalized === []) {
+            throw new \InvalidArgumentException('At least one valid EXT_ID is required.');
+        }
+
+        return array_values($normalized);
+    }
+
+    private function is_contact_not_found_exception(BrevoApiException $exception): bool
+    {
+        if ($exception->get_status_code() === 404) {
+            return true;
+        }
+
+        if ($exception->get_status_code() !== 400) {
+            return false;
+        }
+
+        $error_data = $exception->get_error_data();
+        $brevo_error_code = strtolower(trim((string) ($error_data['brevo_error_code'] ?? '')));
+        if (in_array($brevo_error_code, ['document_not_found', 'contact_not_found', 'not_found'], true)) {
+            return true;
+        }
+
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'does not exist')
+            || str_contains($message, 'not found')
+            || str_contains($message, 'unable to find');
+    }
+
+    private function is_ext_id_already_assigned_exception(BrevoApiException $exception): bool
+    {
+        if ($exception->get_status_code() !== 400) {
+            return false;
+        }
+
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'ext_id is already associated with another contact')
+            || str_contains($message, 'ext_id already associated');
     }
 
     /**

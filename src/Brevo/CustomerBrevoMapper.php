@@ -6,21 +6,14 @@ namespace CSP\Brevo;
 
 class CustomerBrevoMapper
 {
-    private const ATTR_FIRST_NAME = 'FIRSTNAME';
-    private const ATTR_LAST_NAME = 'LASTNAME';
-    private const ATTR_SMS = 'SMS';
-    private const ATTR_EXT_ID = 'EXT_ID';
     private const ATTR_LANDLINE_NUMBER = 'LANDLINE_NUMBER';
     private const ATTR_CONTACT_TIMEZONE = 'CONTACT_TIMEZONE';
-    private const ATTR_JOB_TITLE = 'JOB_TITLE';
-    private const ATTR_LINKEDIN = 'LINKEDIN';
     private const ATTR_COMPANY_NAME = 'COMPANY_NAME';
     private const ATTR_PHONE = 'PHONE';
     private const ATTR_ADDRESS = 'ADDRESS';
     private const ATTR_CITY = 'CITY';
     private const ATTR_STATE = 'STATE';
     private const ATTR_CUSTOMER_SEGMENT = 'CUSTOMER_SEGMENT';
-    private const ATTR_CUSTOMER_SUBSEGMENT = 'CUSTOMER_SUBSEGMENT';
     private const ATTR_BILLING_CENTER = 'BILLING_CENTER';
     private const ATTR_WP_STATUS = 'WP_STATUS';
     private const ATTR_WP_LAST_SYNC_AT = 'WP_LAST_SYNC_AT';
@@ -57,18 +50,26 @@ class CustomerBrevoMapper
      */
     private function map_payload($customer, string $status, string $sync_source): array
     {
-        $email = $this->normalize_email($this->read_string($customer, ['email']));
-        if ($email === '') {
-            throw new \InvalidArgumentException('Customer email is required for Brevo sync payload.');
+        $ext_id = $this->normalize_ext_id($this->read_string($customer, ['ext_id', 'external_id', 'wp_customer_id', 'customer_id', 'id']));
+        if ($ext_id === '') {
+            throw new \InvalidArgumentException('Customer EXT_ID is required for Brevo sync payload.');
         }
+
+        $email = $this->normalize_email($this->read_string($customer, ['email']));
 
         $attributes = $this->build_attributes($customer, $status, $sync_source);
 
         $payload = [
-            'email' => $email,
+            'ext_id' => $ext_id,
             'attributes' => $attributes,
             'updateEnabled' => true,
+            'forceMerge' => true,
+            'getId' => true,
         ];
+
+        if ($email !== '') {
+            $payload['email'] = $email;
+        }
 
         $list_ids = $this->resolve_list_ids($status);
         if ($list_ids !== []) {
@@ -85,31 +86,13 @@ class CustomerBrevoMapper
     private function build_attributes($customer, string $status, string $sync_source): array
     {
         $raw_phone = $this->normalize_phone($this->read_string($customer, ['phone']));
-        $raw_sms = $this->normalize_phone($this->read_string($customer, ['mobile_phone', 'sms_phone', 'sms', 'phone_sms']));
-
-        if ($raw_sms === '') {
-            $raw_sms = $raw_phone;
-        }
 
         $attributes = [
-            self::ATTR_FIRST_NAME => $this->normalize_text_value(
-                $this->read_string($customer, ['first_name', 'firstname'])
-            ),
-            self::ATTR_LAST_NAME => $this->normalize_text_value(
-                $this->read_string($customer, ['last_name', 'lastname'])
-            ),
-            self::ATTR_EXT_ID => $this->normalize_text_value(
-                $this->read_string($customer, ['external_id', 'wp_customer_id', 'customer_id', 'id'])
-            ),
             self::ATTR_LANDLINE_NUMBER => $this->normalize_phone(
                 $this->read_string($customer, ['landline_number', 'landline'])
             ),
             self::ATTR_CONTACT_TIMEZONE => $this->normalize_text_value(
                 $this->read_string($customer, ['contact_timezone', 'timezone'])
-            ),
-            self::ATTR_JOB_TITLE => $this->normalize_text_value($this->read_string($customer, ['job_title'])),
-            self::ATTR_LINKEDIN => $this->normalize_linkedin_url(
-                $this->read_string($customer, ['linkedin', 'linkedin_url'])
             ),
             self::ATTR_COMPANY_NAME => $this->normalize_text_value(
                 $this->read_string($customer, ['company_name', 'company'])
@@ -120,9 +103,6 @@ class CustomerBrevoMapper
             self::ATTR_CUSTOMER_SEGMENT => $this->normalize_text_value(
                 $this->read_string($customer, ['segment', 'customer_segment'])
             ),
-            self::ATTR_CUSTOMER_SUBSEGMENT => $this->normalize_text_value(
-                $this->read_string($customer, ['subsegment', 'customer_subsegment'])
-            ),
             self::ATTR_BILLING_CENTER => $this->normalize_text_value($this->read_string($customer, ['billing_center'])),
             self::ATTR_WP_STATUS => $status,
             self::ATTR_WP_LAST_SYNC_AT => gmdate('c'),
@@ -131,10 +111,6 @@ class CustomerBrevoMapper
 
         if ($raw_phone !== '') {
             $attributes[self::ATTR_PHONE] = $raw_phone;
-        }
-
-        if ($raw_sms !== '') {
-            $attributes[self::ATTR_SMS] = $raw_sms;
         }
 
         return $this->filter_empty_attributes($attributes);
@@ -206,6 +182,11 @@ class CustomerBrevoMapper
         return $sanitized;
     }
 
+    private function normalize_ext_id(string $ext_id): string
+    {
+        return $this->normalize_text_value($ext_id);
+    }
+
     private function normalize_phone(string $phone): string
     {
         $phone = $this->normalize_text_value($phone);
@@ -219,21 +200,12 @@ class CustomerBrevoMapper
 
         if (str_starts_with($phone, '+')) {
             $digits = (string) preg_replace('/\D+/', '', substr($phone, 1));
-            return $digits !== '' ? '+' . $digits : '';
+            $normalized = $digits !== '' ? '+' . $digits : '';
+            return $this->is_valid_brevo_phone($normalized) ? $normalized : '';
         }
 
-        return (string) preg_replace('/\D+/', '', $phone);
-    }
-
-    private function normalize_linkedin_url(string $linkedin): string
-    {
-        $linkedin = $this->normalize_text_value($linkedin);
-        if ($linkedin === '') {
-            return '';
-        }
-
-        $sanitized = esc_url_raw($linkedin);
-        return is_string($sanitized) ? $sanitized : '';
+        $normalized = (string) preg_replace('/\D+/', '', $phone);
+        return $this->is_valid_brevo_phone($normalized) ? $normalized : '';
     }
 
     private function normalize_text_value(string $value): string
@@ -246,6 +218,32 @@ class CustomerBrevoMapper
         $decoded = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         return trim(sanitize_text_field($decoded));
+    }
+
+    private function is_valid_brevo_phone(string $phone): bool
+    {
+        $phone = trim($phone);
+        if ($phone === '') {
+            return false;
+        }
+
+        $has_plus_prefix = str_starts_with($phone, '+');
+        $digits = $has_plus_prefix ? substr($phone, 1) : $phone;
+
+        if ($digits === '' || preg_match('/^\d+$/', $digits) !== 1) {
+            return false;
+        }
+
+        $length = strlen($digits);
+        if ($length < 8 || $length > 15) {
+            return false;
+        }
+
+        if (!$has_plus_prefix && str_starts_with($digits, '0')) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

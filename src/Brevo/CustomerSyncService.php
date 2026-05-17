@@ -197,11 +197,12 @@ class CustomerSyncService
                 'action' => $action,
                 'source' => $sync_source,
                 'endpoint' => '/contacts',
-                'method' => 'POST',
+                'method' => 'PUT/POST',
                 'response_code' => (int) ($response['status_code'] ?? 0),
                 'success' => true,
                 'retry_count' => 0,
                 'duration_ms' => $duration_ms,
+                'ext_id' => (string) ($payload['ext_id'] ?? ''),
                 'email' => (string) ($payload['email'] ?? ''),
             ]);
 
@@ -221,7 +222,7 @@ class CustomerSyncService
                 'action' => $action,
                 'source' => $sync_source,
                 'endpoint' => '/contacts',
-                'method' => 'POST',
+                'method' => 'PUT/POST',
                 'success' => false,
                 'retry_count' => 0,
                 'duration_ms' => $duration_ms,
@@ -229,6 +230,7 @@ class CustomerSyncService
                 'error_message' => $safe_error,
                 'response_code' => $exception instanceof BrevoApiException ? $exception->get_status_code() : 0,
                 'retryable' => $exception instanceof BrevoApiException ? $exception->is_retryable() : false,
+                'ext_id' => (string) ($payload['ext_id'] ?? ''),
                 'email' => (string) ($payload['email'] ?? ''),
             ]);
 

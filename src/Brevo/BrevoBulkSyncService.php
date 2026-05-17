@@ -115,8 +115,8 @@ class BrevoBulkSyncService
                 'source' => $source,
                 'total_count' => $total_count,
                 'batch_size' => $this->settings->get_bulk_sync_batch_size(),
-                'endpoint' => '/contacts/import',
-                'method' => 'POST',
+                'endpoint' => '/contacts',
+                'method' => 'PUT/POST',
                 'success' => false,
             ]);
 
@@ -449,8 +449,8 @@ class BrevoBulkSyncService
 
             $this->logger->error('brevo_bulk_sync_batch_exception', [
                 'run_id' => $run_id,
-                'endpoint' => '/contacts/import',
-                'method' => 'POST',
+                'endpoint' => '/contacts',
+                'method' => 'PUT/POST',
                 'success' => false,
                 'error_type' => get_class($exception),
                 'error_message' => $exception->getMessage(),
@@ -468,11 +468,10 @@ class BrevoBulkSyncService
     private function process_customer_rows(array $rows, array $state): array
     {
         $source = (string) ($state['source'] ?? 'admin_bulk');
-
-        $import_contacts = [];
-        $batch_attributes_total = 0;
-        /** @var array<string,array{customer_id:int,fingerprint:string,email:string}> $contacts_meta */
-        $contacts_meta = [];
+        $batch_started_at = microtime(true);
+        $batch_attempted = 0;
+        $batch_succeeded = 0;
+        $batch_failed = 0;
 
         foreach ($rows as $row) {
             $customer_id = isset($row->id) ? (int) $row->id : 0;
@@ -483,21 +482,12 @@ class BrevoBulkSyncService
             $state['last_customer_id'] = max((int) ($state['last_customer_id'] ?? 0), $customer_id);
             $state['scanned_count'] = max(0, (int) ($state['scanned_count'] ?? 0)) + 1;
 
-            $email = sanitize_email((string) ($row->email ?? ''));
-            if ($email === '' || !is_email($email)) {
-                $state['skipped_invalid_count'] = max(0, (int) ($state['skipped_invalid_count'] ?? 0)) + 1;
-                $this->sync_meta_repository->mark_sync_failure(
-                    $customer_id,
-                    'Invalid or missing email address for Brevo sync.'
-                );
-                continue;
-            }
-
             try {
                 $mapped_payload = $this->mapper->map_upsert_payload((array) $row, $source);
             } catch (\Throwable $exception) {
                 $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + 1;
-                $this->sync_meta_repository->mark_sync_failure($customer_id, 'Brevo payload mapping failed.');
+                $state['skipped_invalid_count'] = max(0, (int) ($state['skipped_invalid_count'] ?? 0)) + 1;
+                $this->sync_meta_repository->mark_sync_failure($customer_id, 'Brevo payload mapping failed: ' . $exception->getMessage());
 
                 $this->logger->warning('brevo_bulk_sync_mapper_failed', [
                     'customer_id' => $customer_id,
@@ -514,223 +504,62 @@ class BrevoBulkSyncService
 
             $state['eligible_count'] = max(0, (int) ($state['eligible_count'] ?? 0)) + 1;
             $state['processed_count'] = max(0, (int) ($state['processed_count'] ?? 0)) + 1;
+            $batch_attempted++;
 
-            $mapped_email = strtolower(trim((string) ($mapped_payload['email'] ?? $email)));
-            if ($mapped_email === '') {
-                $mapped_email = strtolower($email);
-            }
-
-            $contact_attributes = is_array($mapped_payload['attributes'] ?? null) ? $mapped_payload['attributes'] : [];
-            $import_contacts[] = [
-                'email' => $mapped_email,
-                'attributes' => $contact_attributes,
-            ];
-            $batch_attributes_total += count($contact_attributes);
-
-            $contacts_meta[$mapped_email] = [
-                'customer_id' => $customer_id,
-                'fingerprint' => $fingerprint,
-                'email' => $mapped_email,
-            ];
-        }
-
-        if ($import_contacts === []) {
-            return ['success' => true, 'state' => $state];
-        }
-
-        $latest_state_before_import = $this->get_run_state();
-        if (
-            (string) ($latest_state_before_import['run_id'] ?? '') === (string) ($state['run_id'] ?? '')
-            && !empty($latest_state_before_import['cancel_requested'])
-        ) {
-            $state['cancel_requested'] = true;
-            $state['updated_at'] = gmdate('c');
-
-            $this->logger->info('brevo_bulk_sync_stop_respected_before_import', [
-                'run_id' => (string) ($state['run_id'] ?? ''),
-                'source' => (string) ($state['source'] ?? 'admin_bulk'),
-                'batch_contacts' => count($import_contacts),
-                'success' => true,
-            ]);
-
-            return ['success' => true, 'state' => $state];
-        }
-
-        $started_at = microtime(true);
-        try {
-            $response = $this->contact_service->import_contacts(
-                $import_contacts,
-                $this->settings->get_customers_list_id()
-            );
-            $process_id = max(0, (int) ($response['process_id'] ?? 0));
-
-            if ($process_id <= 0) {
-                foreach ($contacts_meta as $meta) {
-                    $this->sync_meta_repository->mark_sync_failure(
-                        (int) $meta['customer_id'],
-                        'Brevo import did not return a process ID.',
-                        (string) $meta['fingerprint']
-                    );
-                    $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + 1;
+            try {
+                $response = $this->contact_service->upsert_contact($mapped_payload);
+                $contact_id = null;
+                if (isset($response['body']) && is_array($response['body']) && isset($response['body']['id'])) {
+                    $candidate = trim((string) $response['body']['id']);
+                    $contact_id = $candidate !== '' ? $candidate : null;
                 }
 
-                $state['status'] = self::STATUS_INTERRUPTED;
-                $state['updated_at'] = gmdate('c');
-                $state['finished_at'] = gmdate('c');
-                $state['message'] = 'Brevo import process ID was missing.';
-
-                $this->logger->error('brevo_bulk_import_missing_process_id', [
-                    'run_id' => (string) ($state['run_id'] ?? ''),
-                    'endpoint' => '/contacts/import',
-                    'method' => 'POST',
-                    'response_code' => (int) ($response['status_code'] ?? 0),
-                    'success' => false,
-                    'batch_contacts' => count($import_contacts),
-                    'duration_ms' => (int) round((microtime(true) - $started_at) * 1000),
-                ]);
-
-                return ['success' => false, 'state' => $state];
-            }
-
-            $process_result = $this->contact_service->wait_for_process($process_id, 120, 3);
-            $process_status = sanitize_key((string) ($process_result['status'] ?? ''));
-            $duration_ms = (int) round((microtime(true) - $started_at) * 1000);
-
-            if (!empty($process_result['timed_out'])) {
-                foreach ($contacts_meta as $meta) {
-                    $this->sync_meta_repository->mark_sync_failure(
-                        (int) $meta['customer_id'],
-                        'Brevo import process timed out.',
-                        (string) $meta['fingerprint']
-                    );
-                    $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + 1;
-                }
-
-                $state['status'] = self::STATUS_INTERRUPTED;
-                $state['updated_at'] = gmdate('c');
-                $state['finished_at'] = gmdate('c');
-                $state['message'] = 'Brevo import process timed out.';
-
-                $this->logger->error('brevo_bulk_import_process_timeout', [
-                    'run_id' => (string) ($state['run_id'] ?? ''),
-                    'endpoint' => '/contacts/import',
-                    'method' => 'POST',
-                    'response_code' => (int) ($response['status_code'] ?? 0),
-                    'process_id' => $process_id,
-                    'success' => false,
-                    'duration_ms' => $duration_ms,
-                ]);
-
-                return ['success' => false, 'state' => $state];
-            }
-
-            if (!$this->is_success_process_status($process_status)) {
-                foreach ($contacts_meta as $meta) {
-                    $this->sync_meta_repository->mark_sync_failure(
-                        (int) $meta['customer_id'],
-                        'Brevo import process failed.',
-                        (string) $meta['fingerprint']
-                    );
-                    $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + 1;
-                }
-
-                $state['status'] = self::STATUS_INTERRUPTED;
-                $state['updated_at'] = gmdate('c');
-                $state['finished_at'] = gmdate('c');
-                $state['message'] = 'Brevo import process failed.';
-
-                $this->logger->error('brevo_bulk_import_process_failed', [
-                    'run_id' => (string) ($state['run_id'] ?? ''),
-                    'endpoint' => '/contacts/import',
-                    'method' => 'POST',
-                    'response_code' => (int) ($response['status_code'] ?? 0),
-                    'process_id' => $process_id,
-                    'process_status' => $process_status,
-                    'success' => false,
-                    'duration_ms' => $duration_ms,
-                ]);
-
-                return ['success' => false, 'state' => $state];
-            }
-
-            $failed_by_email = $this->extract_failed_contacts_from_process(
-                is_array($process_result['body'] ?? null) ? $process_result['body'] : [],
-                $contacts_meta
-            );
-            $failed_count_hint = $this->extract_failed_count_hint(
-                is_array($process_result['body'] ?? null) ? $process_result['body'] : []
-            );
-            if ($failed_by_email === [] && $failed_count_hint > 0) {
-                foreach ($contacts_meta as $email => $meta) {
-                    $failed_by_email[$email] = 'Brevo import reported failed rows.';
-                }
-            }
-
-            foreach ($contacts_meta as $email => $meta) {
-                if (isset($failed_by_email[$email])) {
-                    $this->sync_meta_repository->mark_sync_failure(
-                        (int) $meta['customer_id'],
-                        (string) $failed_by_email[$email],
-                        (string) $meta['fingerprint']
-                    );
-                    $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + 1;
-                    continue;
-                }
-
-                $this->sync_meta_repository->mark_sync_success(
-                    (int) $meta['customer_id'],
-                    null,
-                    (string) $meta['fingerprint']
-                );
+                $this->sync_meta_repository->mark_sync_success($customer_id, $contact_id, $fingerprint);
                 $state['success_count'] = max(0, (int) ($state['success_count'] ?? 0)) + 1;
-            }
-
-            $this->logger->info('brevo_bulk_import_batch_completed', [
-                'run_id' => (string) ($state['run_id'] ?? ''),
-                'action' => 'bulk_import_contacts',
-                'source' => (string) ($state['source'] ?? 'admin_bulk'),
-                'endpoint' => '/contacts/import',
-                'method' => 'POST',
-                'response_code' => (int) ($response['status_code'] ?? 0),
-                'process_id' => $process_id,
-                'process_status' => $process_status,
-                'success' => true,
-                'retry_count' => 0,
-                'duration_ms' => $duration_ms,
-                'batch_contacts' => count($contacts_meta),
-                'batch_attributes_total' => $batch_attributes_total,
-                'batch_failed' => count($failed_by_email),
-            ]);
-        } catch (\Throwable $exception) {
-            foreach ($contacts_meta as $meta) {
+                $batch_succeeded++;
+            } catch (\Throwable $exception) {
                 $this->sync_meta_repository->mark_sync_failure(
-                    (int) $meta['customer_id'],
-                    'Brevo import request failed.',
-                    (string) $meta['fingerprint']
+                    $customer_id,
+                    'Brevo bulk upsert failed: ' . $exception->getMessage(),
+                    $fingerprint
                 );
                 $state['failed_count'] = max(0, (int) ($state['failed_count'] ?? 0)) + 1;
+                $batch_failed++;
+
+                $this->logger->warning('brevo_bulk_sync_contact_upsert_failed', [
+                    'run_id' => (string) ($state['run_id'] ?? ''),
+                    'customer_id' => $customer_id,
+                    'source' => $source,
+                    'endpoint' => '/contacts',
+                    'method' => 'PUT/POST',
+                    'success' => false,
+                    'error_type' => get_class($exception),
+                    'error_message' => $exception->getMessage(),
+                ]);
             }
 
-            $state['status'] = self::STATUS_INTERRUPTED;
-            $state['updated_at'] = gmdate('c');
-            $state['finished_at'] = gmdate('c');
-            $state['message'] = 'Brevo import request failed.';
-
-            $this->logger->error('brevo_bulk_import_batch_exception', [
-                'run_id' => (string) ($state['run_id'] ?? ''),
-                'action' => 'bulk_import_contacts',
-                'source' => (string) ($state['source'] ?? 'admin_bulk'),
-                'endpoint' => '/contacts/import',
-                'method' => 'POST',
-                'success' => false,
-                'retry_count' => 0,
-                'duration_ms' => (int) round((microtime(true) - $started_at) * 1000),
-                'error_type' => get_class($exception),
-                'error_message' => $exception->getMessage(),
-            ]);
-
-            return ['success' => false, 'state' => $state];
+            $latest_state = $this->get_run_state();
+            if (
+                (string) ($latest_state['run_id'] ?? '') === (string) ($state['run_id'] ?? '')
+                && !empty($latest_state['cancel_requested'])
+            ) {
+                $state['cancel_requested'] = true;
+                break;
+            }
         }
+
+        $this->logger->info('brevo_bulk_sync_batch_completed', [
+            'run_id' => (string) ($state['run_id'] ?? ''),
+            'action' => 'bulk_upsert_contacts',
+            'source' => $source,
+            'endpoint' => '/contacts',
+            'method' => 'PUT/POST',
+            'success' => true,
+            'duration_ms' => (int) round((microtime(true) - $batch_started_at) * 1000),
+            'batch_attempted' => $batch_attempted,
+            'batch_success' => $batch_succeeded,
+            'batch_failed' => $batch_failed,
+        ]);
 
         return ['success' => true, 'state' => $state];
     }
